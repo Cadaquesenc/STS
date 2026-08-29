@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>STS // 01 — live launch feed</title>
+<meta name="description" content="Every Solana pump.fun launch as it happens, with the structural read that decides whether it is worth looking at.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="feed.css">
+</head>
+<body>
+
+<div id="glow" aria-hidden="true"></div>
+
+<header class="nav">
+  <div class="wordmark">STS <i>//</i> 01</div>
+  <div class="nav-status eyebrow">
+    <span id="link-endpoint"><span class="dot wait" id="link-dot"></span> RPC: connecting</span>
+    <span class="sep">/</span>
+    <span id="link-state">WS OPENING</span>
+    <span class="sep">/</span>
+    <span id="link-rate" class="num">— LAUNCHES/MIN</span>
+  </div>
+  <a class="cta" id="cta" href="https://discord.gg/5H62vAx8vR" target="_blank" rel="noopener">Request access</a>
+</header>
+
+<main class="shell">
+
+  <section class="telemetry" aria-label="Session telemetry">
+    <div class="metric">
+      <b class="num" id="m-tracked">0</b>
+      <span class="eyebrow">Launches tracked</span>
+    </div>
+    <div class="metric">
+      <b class="num" id="m-reject">—<small>%</small></b>
+      <span class="eyebrow">Sybil rejection</span>
+    </div>
+    <div class="metric">
+      <b class="num" id="m-dev">—<small>%</small></b>
+      <span class="eyebrow">Avg deployer supply</span>
+    </div>
+    <div class="metric">
+      <b class="num" id="m-vol">—<small> SOL</small></b>
+      <span class="eyebrow">Passed opening flow</span>
+    </div>
+  </section>
+
+  <div class="stream-head">
+    <div class="left">
+      <span class="dot wait" id="feed-dot"></span>
+      <span class="eyebrow">Live — Solana mainnet · pump.fun</span>
+    </div>
+    <span class="eyebrow" id="stream-count">0 in view</span>
+  </div>
+
+  <section class="stream" id="stream" aria-live="polite" aria-label="Live launch feed">
+    <div class="row head">
+      <div class="cell eyebrow">Time</div>
+      <div class="cell eyebrow">Token</div>
+      <div class="cell eyebrow c-dev-cell">Deployer</div>
+      <div class="cell eyebrow c-block-cell">Launch block</div>
+      <div class="cell eyebrow c-graph-cell">Funding graph</div>
+      <div class="cell eyebrow right">Decision</div>
+    </div>
+    <div id="rows"></div>
+    <div class="empty" id="empty">
+      <span class="eyebrow">Listening</span>
+      <p>The first launch will appear here the moment it lands on chain.</p>
+    </div>
+  </section>
+
+  <p class="footnote" id="footnote">
+    Deployer and launch-block shares are measured over the first seconds of trading, then held.
+    A launch is refused on structure alone — supply held by the deployer, the share of the opening
+    money that moved as one operator, or selling that invalidates the opening.
+  </p>
+
+</main>
+
+<script src="feed.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the STS window is allowed to do. The three engine commands are defined by this app and need no entry here; this grants the window-level basics Tauri itself gates.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

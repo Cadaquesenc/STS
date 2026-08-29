@@ -1,0 +1,1521 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>STS</title>
+    <link rel="stylesheet" href="styles.css" />
+    <!--
+      The window shell.
+
+      This is the layout and the vocabulary. `app.js` fills it: it polls
+      `get_ingestion_metrics` for the counters in the status bar and opens
+      `stream_telemetry` for everything else, both from src-tauri/src/lib.rs.
+
+      What it does not fill stays an em dash. The cluster scores, the risk
+      governor and the execution deck have no command behind them yet, so they
+      hold the value they started with rather than a zero — a trading surface
+      with plausible-looking placeholder rows in it is a surface someone can
+      read a position off by mistake, and that is as true of a rendered zero as
+      of a fake token.
+
+      Two attributes carry the contract. `data-field` marks a cell that takes a
+      value. `data-region` marks a container `app.js` writes rows into, paired
+      with the empty state it is swapped against, so a pane is never simply
+      blank — each empty state says whether nothing has happened or nothing is
+      arriving, which look identical and mean opposite things.
+    -->
+  </head>
+  <body>
+    <div class="app">
+      <!-- ================================================================
+           top bar: what the engine is, and the one control that stops it
+           ================================================================ -->
+      <header class="topbar">
+        <span class="brand">sts</span>
+
+        <div class="mode" data-mode="unknown" data-field="mode">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="label">no engine</span>
+        </div>
+
+        <div class="topbar-stats">
+          <div class="stat">
+            <span class="label">slot</span>
+            <span class="mono dim" data-field="slot">&mdash;</span>
+          </div>
+          <div class="stat">
+            <span class="label">feeds</span>
+            <span class="mono dim" data-field="endpoints">&mdash;</span>
+          </div>
+          <div class="stat">
+            <span class="label">uptime</span>
+            <span class="mono dim" data-field="uptime">&mdash;</span>
+          </div>
+          <div class="stat">
+            <span class="label">breaker</span>
+            <span class="mono dim" data-field="breaker">&mdash;</span>
+          </div>
+
+          <!--
+            What SOL is worth, and the only number on this window the operator
+            writes rather than reads.
+
+            Every market cap threshold in the engine is written in dollars and
+            every chain number arrives in lamports, so until this is set the two
+            never meet and every candidate reads as too small to trade. That is
+            the safe direction to fail in, which is why unset is the starting
+            state — and why it is drawn as a warning rather than left blank. An
+            engine that is quietly refusing everything looks exactly like a
+            quiet market from here.
+
+            Nothing reads it back. No command reports the price, so the only
+            thing the window knows about it is what `set_sol_price` handed back
+            the last time it was set.
+          -->
+          <div class="stat" data-field="sol-price-stat" data-state="unset">
+            <span class="label">sol&nbsp;$</span>
+            <input
+              type="text"
+              inputmode="decimal"
+              class="mono filter-input narrow"
+              data-action="sol-price"
+              placeholder="unset"
+              aria-label="What one SOL is worth in US dollars"
+            />
+          </div>
+        </div>
+
+        <div class="spacer"></div>
+
+        <!--
+          The replay toggle. `aria-checked` is written from the engine's
+          reported state and never from the click, so the control cannot say
+          "on" while the engine is still live — an operator reading a switch
+          that reports its own intent rather than the engine's answer is the
+          exact way a live order gets sent into what somebody thought was a
+          simulation.
+        -->
+        <button
+          type="button"
+          class="toggle"
+          role="switch"
+          aria-checked="false"
+          data-action="replay-toggle"
+          title="Ask the engine to run a recorded fixture instead of the live feeds."
+        >
+          <span class="toggle-track" aria-hidden="true"><span class="toggle-knob"></span></span>
+          <span class="label">replay</span>
+        </button>
+
+        <button
+          type="button"
+          class="kill"
+          data-action="kill-switch"
+          title="Halt the engine. Exits stay open."
+        >
+          kill switch
+        </button>
+      </header>
+
+      <!-- ================================================================
+           the replay status bar
+
+           Persistent and above the panes rather than inside one, because the
+           single most consequential fact while it is showing is that no number
+           below it is live. A badge that scrolls away with the pane it sits in
+           is a badge that is not there at the moment somebody reads a slot off
+           the top bar and believes it.
+
+           Hidden — not merely empty — outside replay. `[hidden]` collapses the
+           grid row to nothing, so the panes keep the full window when the
+           engine is live.
+           ================================================================ -->
+      <div
+        class="replaybar"
+        data-region="replay-bar"
+        role="status"
+        aria-label="Replay status"
+        hidden
+      >
+        <span class="dot is-warn" aria-hidden="true"></span>
+        <span class="replay-word">replay</span>
+
+        <div class="replay-facts">
+          <div class="stat">
+            <span class="label">slot clock</span>
+            <span class="mono warn" data-field="replay-clock">virtualised</span>
+          </div>
+          <div class="stat">
+            <span class="label">replay slot</span>
+            <span class="mono" data-field="replay-slot">&mdash;</span>
+          </div>
+          <div class="stat">
+            <span class="label">record</span>
+            <span class="mono dim" data-field="replay-progress">&mdash;</span>
+          </div>
+          <div class="stat">
+            <span class="label">fixture</span>
+            <span class="key" data-field="replay-fixture">&mdash;</span>
+          </div>
+          <div class="stat">
+            <span class="label">chain head</span>
+            <span class="key" data-field="replay-chain-head">&mdash;</span>
+            <span class="integrity" data-field="replay-integrity" data-state="unverified">
+              unverified
+            </span>
+          </div>
+        </div>
+
+        <div class="spacer"></div>
+
+        <!--
+          The transport and the multiplier are one cluster and wrap as one. Two
+          groups split across two lines of a wrapped bar, with the whole width
+          of the facts between them, read as two unrelated controls — which is
+          the one thing they are not: `faster` walks the same ladder the chips
+          draw, and the chip that lights when it is pressed is how the operator
+          sees where on it the run now is.
+        -->
+        <div class="replay-controls">
+          <!--
+            The transport: four buttons that move a playhead inside a run the
+            switch has already started. None of them can start one, stop one, or
+            open a different fixture — `set_replay_transport` has no way to
+            reach `active`, the same way the speed chips have no way to reach
+            it, and nothing here sends `stop`. That split is the reason four
+            more controls can sit on this bar without making it a second way
+            into replay.
+
+            `play` sends `resume` and not `play`. `ReplayControl::Play` opens
+            the fixture, rewinds it and plays; `Resume` carries on from where
+            the playhead is. A play button that silently rewound would lose the
+            paused position somebody stopped on to look at, which is the one
+            thing a pause is for.
+
+            `ff` is a fast-forward and not a multiplier. It plays the next few
+            hundred records immediately rather than over the next several
+            seconds — played, not skipped: every one goes past the strategy in
+            order, so the ledger afterwards is the ledger of having watched
+            them. The multiplier is the four chips beside it and nothing else.
+
+            Play and pause are two buttons rather than one that changes its word.
+            A control whose label changes width moves the controls beside it, and
+            the operator has to be able to see whether the playhead is held
+            without pressing anything to find out — which is the same argument
+            the speed chips are drawn from, and `aria-pressed` carries it the same
+            way. Both stay enabled whichever one is lit: pressing the one that is
+            already true does nothing, and a button that disabled itself under the
+            pointer would take the keyboard focus with it.
+
+            All four are disabled outside replay, and all four are disabled at
+            the end of a fixture, where the session itself has nowhere left to
+            move the playhead. Nothing else here is disabled: `step` on a moving
+            playhead is something this build's session permits and this window
+            therefore permits, because a button drawn as refused where the
+            engine does not refuse is a rule that exists only on screen.
+          -->
+          <div class="transport" role="group" aria-label="Playback transport">
+            <button
+              type="button"
+              class="chip"
+              data-transport="play"
+              aria-pressed="false"
+              disabled
+              title="Let the playhead move again from where it is. It does not rewind."
+            >
+              play
+            </button>
+            <button
+              type="button"
+              class="chip"
+              data-transport="pause"
+              aria-pressed="false"
+              disabled
+              title="Hold the playhead. The fixture is still what is driving these numbers, so this bar stays up."
+            >
+              pause
+            </button>
+            <button
+              type="button"
+              class="chip"
+              data-transport="step"
+              disabled
+              title="Play exactly one more record, whatever the multiplier says, and hold there."
+            >
+              step
+            </button>
+            <button
+              type="button"
+              class="chip"
+              data-transport="fastForward"
+              disabled
+              title="Play the next few hundred records now, without spending wall clock on them, and hold."
+            >
+              ff
+            </button>
+          </div>
+
+          <!--
+            Speed is a group of four rather than a cycling button: the operator
+            has to be able to see which multiplier is active without pressing
+            anything, and `aria-pressed` on each is what carries that to a reader.
+          -->
+          <div class="speeds" role="group" aria-label="Playback speed">
+            <button type="button" class="chip" data-speed="1" aria-pressed="false">1x</button>
+            <button type="button" class="chip" data-speed="5" aria-pressed="false">5x</button>
+            <button type="button" class="chip" data-speed="10" aria-pressed="false">10x</button>
+            <button type="button" class="chip" data-speed="max" aria-pressed="false">max</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================================================================
+           three panes
+           ================================================================ -->
+      <main class="panes">
+        <!-- ------------------------------------------------------------
+             left: live candidate radar
+             ------------------------------------------------------------ -->
+        <section class="pane" aria-label="Live candidate radar">
+          <div class="pane-head">
+            <h1 class="label">live candidate radar</h1>
+            <span class="count" data-field="candidate-count">0</span>
+          </div>
+
+          <div class="pane-tools" role="group" aria-label="Candidate filter">
+            <button type="button" class="chip" aria-pressed="true">all</button>
+            <button type="button" class="chip" aria-pressed="false">fast path</button>
+            <button type="button" class="chip" aria-pressed="false">graduating</button>
+          </div>
+
+          <!--
+            The search, on a row of its own rather than beside the chips.
+
+            It arrived in the chip row and it does not fit there: this pane is
+            240px at its widest, the three chips and their gaps are most of
+            that, and an input taking the rest left `fast path` wrapping onto
+            two lines at every width the window can be. A filter whose own label
+            has broken in half is a filter that reads as a bug.
+
+            A row of its own also matches what it does. The chips are a radio
+            group — exactly one of the three is true — and this narrows whatever
+            they left, which is a different kind of control and not a fourth
+            option.
+          -->
+          <div class="pane-tools radar-search-row" role="search">
+            <input
+              type="text"
+              class="mono filter-input radar-search"
+              data-field="radar-search"
+              placeholder="search account / creator…"
+              aria-label="Filter candidates by account or creator address"
+            />
+          </div>
+
+          <div class="pane-tools radar-stats" role="group" aria-label="Radar statistics">
+            <div class="radar-stat">
+              <span class="label">seen</span>
+              <span class="mono dim" data-field="stats-seen">0</span>
+            </div>
+            <div class="radar-stat">
+              <span class="label">fast</span>
+              <span class="mono dim" data-field="stats-fast">0</span>
+            </div>
+            <div class="radar-stat">
+              <span class="label">grad</span>
+              <span class="mono dim" data-field="stats-grad">0</span>
+            </div>
+            <div class="radar-stat">
+              <span class="label">new / min</span>
+              <span class="mono dim" data-field="stats-rate">0</span>
+            </div>
+          </div>
+
+          <div class="pane-body">
+            <div class="radar-grid col-head" role="row">
+              <span class="label">token</span>
+              <span class="num">curve</span>
+              <span class="num">liq sol</span>
+              <span class="num">age</span>
+            </div>
+
+            <!--
+              The shape `app.js` writes into the container below. The token
+              column carries the bonding curve account rather than a symbol:
+              the frame ingestion decodes carries neither a mint nor a name,
+              and inventing one here would put a label on screen that no part
+              of the engine could confirm.
+
+              <div class="radar-grid row" role="row" aria-selected="false">
+                <span class="sym">4hRt…9kPq</span>
+                <span class="curve num" style="--pct: 62%"><span>62.0</span></span>
+                <span class="num">12.480</span>
+                <span class="num dim">4m</span>
+              </div>
+            -->
+            <div data-region="radar-rows" hidden></div>
+
+            <div class="empty" data-region="radar-empty">
+              <p class="empty-title">no candidates</p>
+              <p class="empty-note">
+                Nothing is being received. Empty here means the ingest path is
+                quiet or not connected, not that the market is.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ------------------------------------------------------------
+             middle: forensic inspection terminal
+             ------------------------------------------------------------ -->
+        <section class="pane" aria-label="Forensic inspection terminal">
+          <div class="pane-head">
+            <h1 class="label">forensic inspection terminal</h1>
+            <span class="count" data-field="subject-slot">&mdash;</span>
+          </div>
+
+          <div class="subject">
+            <div class="subject-line">
+              <span class="subject-sym faint" data-field="subject-symbol">no subject</span>
+              <span class="key" data-field="subject-mint">&mdash;</span>
+            </div>
+            <div class="subject-line" style="margin-top: 4px">
+              <span class="label">creator</span>
+              <span class="key" data-field="subject-creator">&mdash;</span>
+              <span class="label">curve</span>
+              <span class="key" data-field="subject-curve-account">&mdash;</span>
+            </div>
+          </div>
+
+          <div class="pane-body">
+            <!-- ------------------------------------------------------------
+                 bonding curve and liquidity migration
+
+                 Three questions about the same six numbers, which is why they
+                 are one module rather than three rows in the metric strip:
+
+                   1. How far is this curve from migrating? The bar, measured
+                      against the 85 SOL of real reserves pump.fun graduates at.
+                   2. How much of the quoted price is actually there? The
+                      virtual reserve sets the price and the real reserve sets
+                      what an exit can be sold into, and their ratio is the gap
+                      between the two.
+                   3. What does a front-runner need to spend to make sandwiching
+                      a buy here pay? REPLAY_AND_SIMULATION_SPEC.md 15.2 gives
+                      that as a closed form in the virtual SOL reserve alone.
+
+                 Every one of them is read off `CandidateView`. Nothing in this
+                 block is modelled, assumed, or carried forward from an earlier
+                 slot; with no subject selected it is all em dashes.
+                 ------------------------------------------------------------ -->
+            <div class="section-head">
+              <h2 class="label">bonding curve &amp; liquidity migration</h2>
+              <span
+                class="badge"
+                data-field="sandwich-badge"
+                data-risk="unknown"
+                >&mdash;</span
+              >
+            </div>
+
+            <div class="curve-module" data-region="curve-module">
+              <!--
+                The bar carries its own value as text for a reader, and the
+                threshold marker is drawn inside the track rather than as a
+                border on it, so a curve crossing 100% does not change the
+                element's box and shift the rows underneath.
+              -->
+              <div class="curve-track">
+                <span
+                  class="curve-fill"
+                  data-field="migration-fill"
+                  style="--pct: 0%"
+                ></span>
+                <span class="curve-mark" aria-hidden="true"></span>
+              </div>
+
+              <div class="curve-legend">
+                <span class="mono" data-field="migration-pct">&mdash;</span>
+                <span class="faint">to migration</span>
+                <span class="mono dim" data-field="migration-remaining">&mdash;</span>
+              </div>
+
+              <dl class="curve-facts">
+                <div class="curve-fact">
+                  <dt class="label">real sol</dt>
+                  <dd class="num" data-field="curve-real-sol">&mdash;</dd>
+                  <dd class="curve-note">executable — what an exit sells into</dd>
+                </div>
+                <div class="curve-fact">
+                  <dt class="label">virtual sol</dt>
+                  <dd class="num" data-field="curve-virtual-sol">&mdash;</dd>
+                  <dd class="curve-note">price-setting reserve</dd>
+                </div>
+                <div class="curve-fact">
+                  <dt class="label">reserve ratio</dt>
+                  <dd class="num" data-field="curve-reserve-ratio">&mdash;</dd>
+                  <dd class="curve-note">real over virtual</dd>
+                </div>
+                <div class="curve-fact">
+                  <dt class="label">sandwich floor</dt>
+                  <dd class="num" data-field="sandwich-floor">&mdash;</dd>
+                  <dd class="curve-note">smallest buy a front-run pays on</dd>
+                </div>
+              </dl>
+            </div>
+
+            <!--
+              The four cluster scores, in the order they are meant to be read.
+              None of them proves anything alone: a real crowd can look
+              concentrated and a careful faker can look diffuse, which is why
+              they are shown side by side instead of reduced to one number.
+            -->
+            <div class="metrics">
+              <div class="metric">
+                <p class="label">hhi</p>
+                <p class="metric-value faint" data-field="cluster-hhi">&mdash;</p>
+                <p class="metric-note">holding concentration, bps</p>
+              </div>
+              <div class="metric">
+                <p class="label">temporal</p>
+                <p class="metric-value faint" data-field="cluster-temporal">&mdash;</p>
+                <p class="metric-note">buys landing together</p>
+              </div>
+              <div class="metric">
+                <p class="label">entropy</p>
+                <p class="metric-value faint" data-field="cluster-entropy">&mdash;</p>
+                <p class="metric-note">who funds whom</p>
+              </div>
+              <div class="metric">
+                <p class="label">separation</p>
+                <p class="metric-value faint" data-field="cluster-separation">&mdash;</p>
+                <p class="metric-note">split from the graph</p>
+              </div>
+            </div>
+
+            <!--
+              The badge is the evidence state of the numbers above, and it is in
+              the head rather than in a row of its own so that adding it costs
+              no height: the curve section's head carries one the same way.
+
+              It is not decoration. A cluster score derived from funding edges
+              nobody checked and the same score derived from edges two providers
+              confirmed are the same number and different claims, and an
+              operator who cannot tell them apart has been handed the first
+              while reading the second.
+            -->
+            <div class="section-head">
+              <h2 class="label">wallet cluster</h2>
+              <span
+                class="badge"
+                data-field="cluster-evidence"
+                data-risk="unknown"
+                >&mdash;</span
+              >
+            </div>
+
+            <!--
+              The creator, and who paid for it.
+
+              This strip is above the cluster list rather than in it because it
+              is not one of the hands: `clustering.rs` traces the dev wallet
+              separately, and the question it answers — "was the launch's own
+              deployer paid by whoever paid the buyers" — is the one the rest of
+              the pane cannot ask. A launch with two opening buyers resolves no
+              cluster at all and can still have a creator that funded both of
+              them, so this must be readable when the list below is empty.
+
+              Three facts and a sentence. The sentence is the part an operator
+              reads, and it is deliberately the *strongest* claim the trace
+              supports rather than a summary of all of them: "the creator paid
+              for this book itself" and "the creator came out of Binance" are
+              both true of some launches and only one of them is a finding.
+
+              Fixed height, like every other section in this pane. Two lines are
+              reserved for the sentence whether or not it needs both, and the
+              full wording is on the title — a strip that grew when it found
+              something would move the list under it exactly when an operator
+              was reading the list.
+            -->
+            <dl class="dev-facts">
+              <div class="dev-fact">
+                <dt class="label">creator</dt>
+                <dd class="mono faint" data-field="cluster-creator">&mdash;</dd>
+              </div>
+              <div class="dev-fact">
+                <dt class="label">paid by</dt>
+                <dd class="mono faint" data-field="cluster-dev-origin">&mdash;</dd>
+              </div>
+              <div class="dev-fact">
+                <dt class="label">insider</dt>
+                <dd class="num faint" data-field="cluster-insider">&mdash;</dd>
+              </div>
+            </dl>
+
+            <p class="dev-claim faint" data-field="cluster-dev-claim">
+              No subject is selected.
+            </p>
+
+            <!--
+              Bounded, like the stream below it and for the same reason. This
+              section swaps between a list and an empty state whose wording
+              changes on selection, and the wording is several lines longer than
+              what it replaces — inside the pane flow that moved every section
+              under it down the moment a row was clicked.
+            -->
+            <div class="section-viewport">
+              <div class="cluster-grid col-head" role="row">
+                <span class="label">wallet</span>
+                <span class="num">share</span>
+                <span class="num">first buy</span>
+                <span class="num">sybil</span>
+              </div>
+
+              <div data-region="cluster-rows" hidden></div>
+
+              <div class="empty" data-region="cluster-empty">
+                <p class="empty-title">nothing selected</p>
+                <p class="empty-note">
+                  Pick a candidate on the left to see its creator, its cluster
+                  and the evidence behind the sybil reading.
+                </p>
+              </div>
+            </div>
+
+            <!-- ------------------------------------------------------------
+                 tick stream forensic inspector
+
+                 A tick is one observation of one curve account. The engine
+                 already publishes them — every `ingestion` telemetry line is
+                 one — and what this section adds is the two derivatives you
+                 cannot see in a list of absolute numbers: what the price did
+                 between this observation and the last one of the same account,
+                 and how the SOL that moved compares with how much usually
+                 moves on that account.
+
+                 The filters narrow the view and never delete a tick. The count
+                 in the head is always "shown of held", so a filter that hides
+                 everything reads as a filter rather than as a quiet feed.
+                 ------------------------------------------------------------ -->
+            <div class="section-head">
+              <h2 class="label">tick stream forensic inspector</h2>
+              <span class="count" data-field="tick-count">0 / 0</span>
+            </div>
+
+            <div class="pane-tools stream-tools" role="group" aria-label="Tick filters">
+              <label class="filter">
+                <span class="label">from slot</span>
+                <input
+                  type="text"
+                  inputmode="numeric"
+                  class="mono filter-input"
+                  data-filter="slot"
+                  placeholder="any"
+                  aria-label="Show ticks at or after this slot"
+                />
+              </label>
+
+              <label class="filter">
+                <span class="label">|δ| bps</span>
+                <input
+                  type="text"
+                  inputmode="numeric"
+                  class="mono filter-input"
+                  data-filter="delta"
+                  placeholder="any"
+                  aria-label="Show ticks whose absolute price delta is at least this many basis points"
+                />
+              </label>
+
+              <label class="filter">
+                <span class="label">min &times;</span>
+                <input
+                  type="text"
+                  inputmode="decimal"
+                  class="mono filter-input narrow"
+                  data-filter="vol"
+                  placeholder="any"
+                  aria-label="Show ticks whose SOL movement is at least this many times the account's median move"
+                />
+              </label>
+
+              <button
+                type="button"
+                class="chip"
+                data-filter="anomaly"
+                aria-pressed="false"
+                title="Keep only ticks whose SOL movement is far outside what this account usually moves."
+              >
+                anomalies
+              </button>
+
+              <!--
+                The sandwich chip is a threshold, not a screening heuristic like
+                the one beside it: a tick is kept when the buy it records was
+                large enough against the reserve it hit that a front-run of some
+                size clears the fees on it. REPLAY_AND_SIMULATION_SPEC.md §15.2
+                derives the condition; the row's own cell carries the number.
+              -->
+              <button
+                type="button"
+                class="chip"
+                data-filter="sandwich"
+                aria-pressed="false"
+                title="Keep only ticks whose buy was above the sandwich threshold — where a front-run of some size clears fees, before any landing cost."
+              >
+                sandwich
+              </button>
+
+              <button
+                type="button"
+                class="chip"
+                data-filter="subject"
+                aria-pressed="false"
+                title="Keep only ticks for the selected subject."
+              >
+                subject
+              </button>
+
+              <span class="spacer"></span>
+              <span class="filter-state faint" data-field="tick-filter-state">no filter</span>
+            </div>
+
+            <!--
+              A real grid, not four grids of spans: the columns here are derived
+              rather than reported, and a reader that cannot tie "+142" to the
+              heading "δ bps" is being read a number with no units. So the
+              headings are `columnheader`, the cells are `gridcell`, and the
+              cursor is `aria-selected` on the row — the same attribute the
+              radar uses for the same thing.
+            -->
+            <!--
+              A viewport of its own, and a fixed one.
+
+              The stream is prepended to on every observation and grows to five
+              hundred rows. Inside the pane body it shares with the event trail
+              that would push the trail a row further down ten times a second —
+              a number moving under the eye of whoever is reading it, which is
+              the one thing this pane cannot do. So it scrolls inside a box that
+              never changes height, and the empty states live in the same box so
+              that swapping between them does not change it either.
+            -->
+            <div class="stream-viewport">
+            <div class="stream" role="grid" aria-label="Tick stream">
+              <!--
+                The numeric heads are sort controls; `curve` is not, because a
+                base58 key sorts alphabetically and alphabetical order over
+                account keys is not an order anybody wants a stream in.
+
+                The button is inside the header rather than instead of it:
+                `aria-sort` belongs on the thing with the `columnheader` role,
+                and a button that is announced as a column header is a button
+                that is not announced as a button.
+
+                And there is no whitespace inside a header, which is why they
+                are written closed up: the headings are measured for wrapping,
+                and a text node beside an inline-block button is a second line
+                box that reads as a heading that wrapped.
+              -->
+              <div class="stream-grid col-head" role="row">
+                <span class="num" role="columnheader" aria-sort="none"><button
+                    type="button"
+                    class="sort"
+                    data-sort="slot"
+                    data-active="false"
+                    title="Sort by slot — which is not arrival order, and the difference is the point. Descending, then ascending, then back to arrival order."
+                  >slot</button></span>
+                <span class="label" role="columnheader">curve</span>
+                <span class="num" role="columnheader" aria-sort="none"><button
+                    type="button"
+                    class="sort"
+                    data-sort="mcap"
+                    data-active="false"
+                    title="Sort by market cap. Descending, then ascending, then back to arrival order."
+                  >mcap sol</button></span>
+                <span class="num" role="columnheader" aria-sort="none"><button
+                    type="button"
+                    class="sort"
+                    data-sort="delta"
+                    data-active="false"
+                    title="Sort by price delta, signed. The filter beside it takes the absolute value; this does not. Descending, then ascending, then back to arrival order."
+                  >δ bps</button></span>
+                <span class="num" role="columnheader" aria-sort="none"><button
+                    type="button"
+                    class="sort"
+                    data-sort="flow"
+                    data-active="false"
+                    title="Sort by the SOL that moved, signed. Descending, then ascending, then back to arrival order."
+                  >δ sol</button></span>
+                <span class="num" role="columnheader" aria-sort="none"><button
+                    type="button"
+                    class="sort"
+                    data-sort="beta"
+                    data-active="false"
+                    title="Sort by β, the size of the buy against the reserve it hit. Rows with no buy sort last either way. Descending, then ascending, then back to arrival order."
+                  ><span class="sym">β</span> bps</button></span>
+                <span class="num" role="columnheader" aria-sort="none"><button
+                    type="button"
+                    class="sort"
+                    data-sort="vol"
+                    data-active="false"
+                    title="Sort by the volume multiple. Rows with no multiple sort last either way. Descending, then ascending, then back to arrival order."
+                  >vol</button></span>
+              </div>
+
+              <!--
+                <div class="stream-grid row" role="row" tabindex="-1" aria-selected="false">
+                  <span class="num" role="gridcell">312905118</span>
+                  <span class="key" role="gridcell">4hRt…9kPq</span>
+                  <span class="num" role="gridcell">92.650</span>
+                  <span class="num live" role="gridcell">+142</span>
+                  <span class="num" role="gridcell">+1.310</span>
+                  <span class="risk" role="gridcell" data-sandwich="true">327</span>
+                  <span class="vol" role="gridcell" data-anomaly="true">4.2x</span>
+                </div>
+              -->
+              <div data-region="tick-rows" role="rowgroup" hidden></div>
+            </div>
+
+            <div class="empty" data-region="tick-empty">
+              <p class="empty-title">no ticks</p>
+              <p class="empty-note">
+                A tick is one observation of one curve account. Nothing has been
+                observed yet, which is not the same as nothing having moved.
+              </p>
+            </div>
+
+            <div class="empty" data-region="tick-filtered" hidden>
+              <p class="empty-title">every tick is filtered out</p>
+              <p class="empty-note">
+                The filters hide rows; they never drop them. Clear them to see
+                the stream again.
+              </p>
+            </div>
+            </div>
+
+            <!-- ------------------------------------------------------------
+                 trade journal & alert feed
+
+                 Two feeds in one box, and the box never changes height.
+
+                 The journal is `journal.rs`: one row per trade, read back out
+                 of `sts.db` through `query_journal`, with the totals of the
+                 *filter* rather than of the page beside it — an operator
+                 looking at the first fifty of nine hundred losses wants the
+                 nine hundred. The alerts are `alerting.rs`: the subset of what
+                 happened that somebody has to act on, arriving on their own
+                 channel through `stream_alerts` as well as on the telemetry
+                 hub, so this pane does not have to sieve a firehose to find
+                 them.
+
+                 They share one viewport because they are two answers to one
+                 question — what has this engine actually done — and because a
+                 box that changes height when a tab is pressed moves the event
+                 trail underneath it.
+
+                 Both feeds are revisioned. Every row carries the revision it
+                 was applied at, the head of each feed is drawn beside its
+                 count, and a row whose revision is not above the highest
+                 already applied is dropped rather than appended: a backfill
+                 that overlaps the live stream is the normal case here, not the
+                 exceptional one, and appending it twice would double a
+                 realised loss on screen.
+                 ------------------------------------------------------------ -->
+            <div class="section-head">
+              <h2 class="label">trade journal &amp; alerts</h2>
+              <span class="count" data-field="journal-count">0 / 0</span>
+            </div>
+
+            <div class="pane-tools feed-tools" role="group" aria-label="Journal and alert feed">
+              <!--
+                A tab pair rather than two sections. `aria-pressed` carries
+                which one is showing, the same way every other chip in this
+                window does.
+              -->
+              <button
+                type="button"
+                class="chip"
+                data-feed="journal"
+                aria-pressed="true"
+                title="Every trade this engine has opened, newest first, as journal.rs recorded it."
+              >
+                journal
+              </button>
+              <button
+                type="button"
+                class="chip"
+                data-feed="alerts"
+                aria-pressed="false"
+                title="Only the things somebody has to act on, as alerting.rs raised them."
+              >
+                alerts
+              </button>
+
+              <label class="filter">
+                <span class="label">mode</span>
+                <select
+                  class="mono filter-input narrow"
+                  data-filter="journal-mode"
+                  aria-label="Show trades in this execution mode"
+                >
+                  <option value="">any</option>
+                  <option value="live">live</option>
+                  <option value="paper">paper</option>
+                  <option value="replay">replay</option>
+                </select>
+              </label>
+
+              <button
+                type="button"
+                class="chip"
+                data-filter="journal-closed"
+                aria-pressed="false"
+                title="Keep only trades that have been closed, which are the only ones with a realised number on them."
+              >
+                closed
+              </button>
+
+              <button
+                type="button"
+                class="chip"
+                data-filter="journal-losses"
+                aria-pressed="false"
+                title="Keep only closed trades that lost money."
+              >
+                losses
+              </button>
+
+              <span class="spacer"></span>
+
+              <!--
+                The revision the feed has applied up to, drawn from the same
+                counter the rows are gated on rather than from a second one
+                kept beside it. A number here that disagrees with what the feed
+                actually applied is the failure this is here to make visible,
+                so the suite compares this text against the internal counter
+                rather than against itself.
+              -->
+              <span class="filter-state faint" data-field="journal-revision">rev &mdash;</span>
+            </div>
+
+            <div class="feed-viewport">
+              <div class="feed" role="grid" aria-label="Trade journal" data-region="journal-feed">
+                <div class="journal-grid col-head" role="row">
+                  <span class="label" role="columnheader">mint</span>
+                  <span class="label" role="columnheader">side</span>
+                  <span class="num" role="columnheader">size sol</span>
+                  <span class="num" role="columnheader">pnl sol</span>
+                  <span class="num" role="columnheader">slip bps</span>
+                  <span class="num" role="columnheader">state</span>
+                </div>
+
+                <!--
+                  <div class="journal-grid row" role="row" data-open="false">
+                    <span class="key" role="gridcell">4hRt…9kPq</span>
+                    <span class="side" role="gridcell" data-side="buy">buy</span>
+                    <span class="num" role="gridcell">0.250</span>
+                    <span class="num live" role="gridcell">+0.031</span>
+                    <span class="num" role="gridcell">142</span>
+                    <span class="state" role="gridcell" data-state="closed">closed</span>
+                  </div>
+                -->
+                <div data-region="journal-rows" role="rowgroup" hidden></div>
+              </div>
+
+              <div
+                class="feed"
+                role="grid"
+                aria-label="Alert feed"
+                data-region="alert-feed"
+                hidden
+              >
+                <div class="alert-grid col-head" role="row">
+                  <span class="num" role="columnheader">at</span>
+                  <span class="label" role="columnheader">kind</span>
+                  <span class="label" role="columnheader">subject</span>
+                  <span class="num" role="columnheader">observed</span>
+                  <span class="num" role="columnheader">threshold</span>
+                </div>
+
+                <div data-region="alert-rows" role="rowgroup" hidden></div>
+              </div>
+
+              <div class="empty" data-region="journal-empty">
+                <p class="empty-title">no trades recorded</p>
+                <p class="empty-note">
+                  The journal is written when an execution settles. Empty here
+                  means nothing has settled — not that nothing was attempted,
+                  which the execution deck on the right is where you see.
+                </p>
+              </div>
+
+              <div class="empty" data-region="journal-filtered" hidden>
+                <p class="empty-title">every trade is filtered out</p>
+                <p class="empty-note">
+                  The filters narrow what is asked for; they never drop what came
+                  back. Clear them to see the journal again.
+                </p>
+              </div>
+
+              <div class="empty" data-region="alert-empty" hidden>
+                <p class="empty-title">no alerts raised</p>
+                <p class="empty-note">
+                  An alert is something past a threshold somebody set. Nothing
+                  has crossed one, which is the state this engine is supposed to
+                  spend most of its time in.
+                </p>
+              </div>
+
+              <div class="empty" data-region="journal-unavailable" hidden>
+                <p class="empty-title">this build has no journal</p>
+                <p class="empty-note">
+                  The engine answered that it does not have the journal
+                  commands, so there is nothing behind this pane. It is drawn
+                  empty rather than hidden, because a pane that disappears reads
+                  as a pane with nothing in it.
+                </p>
+              </div>
+            </div>
+
+            <div class="section-head">
+              <h2 class="label">event trail</h2>
+            </div>
+
+            <div data-region="trail-rows" hidden></div>
+
+            <div class="empty" data-region="trail-empty">
+              <p class="empty-title">no events</p>
+              <p class="empty-note">
+                Every row here carries the payload it was recorded with, on the
+                row itself, so a decision can be traced back to what it was made
+                on. A gap in the sequence is reported as a gap rather than
+                skipped, because a dropped event and a quiet engine look the
+                same on screen and are not the same thing.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ------------------------------------------------------------
+             right: execution deck and risk governor
+             ------------------------------------------------------------ -->
+        <section class="pane" aria-label="Execution deck and risk governor">
+          <div class="pane-head">
+            <h1 class="label">execution deck &amp; risk governor</h1>
+            <span class="count" data-field="open-positions">0 open</span>
+          </div>
+
+          <!--
+            The governor sits above the log, not below it. What the engine is
+            allowed to do next is the thing being watched; what it already did
+            is history, and history scrolls.
+          -->
+          <div class="governor">
+            <div class="gov-row">
+              <span class="label">equity</span>
+              <span class="num dim" data-field="equity">&mdash;</span>
+            </div>
+            <div class="gov-row">
+              <span class="label">drawdown</span>
+              <span class="meter" data-field="drawdown-meter" aria-hidden="true"><span style="--pct: 0%"></span></span>
+              <span class="num dim" data-field="drawdown">&mdash;</span>
+            </div>
+            <div class="gov-row">
+              <span class="label">exposure</span>
+              <span class="meter" data-field="exposure-meter" aria-hidden="true"><span style="--pct: 0%"></span></span>
+              <span class="num dim" data-field="exposure">&mdash;</span>
+            </div>
+            <div class="gov-row">
+              <span class="label">fast path</span>
+              <span class="num dim" data-field="fast-path-budget">&mdash;</span>
+            </div>
+            <div class="gov-row">
+              <span class="label">circuit breaker</span>
+              <span class="mono dim" data-field="breaker-detail">&mdash;</span>
+            </div>
+          </div>
+
+          <!--
+            Shown only when an execution was abandoned with something still on
+            chain. It does not clear itself: the position has to be flattened by
+            hand, and the banner is how that gets noticed rather than found
+            later in a balance.
+          -->
+          <div class="unwind" data-open="false">
+            <span class="dot is-halt" aria-hidden="true"></span>
+            <!-- The live region is the sentence, not the whole banner: a button
+                 inside one gets re-announced every time the count changes. -->
+            <span role="status" data-field="unwind-text">no positions awaiting unwind</span>
+            <button
+              type="button"
+              class="btn is-halt unwind-action"
+              data-action="unwind"
+              disabled
+            >
+              flatten
+            </button>
+          </div>
+
+          <!-- ================================================================
+               how sends are landing
+
+               The governor above says what the engine is allowed to do. This
+               says whether what it does arrives. A tip that is priced correctly
+               and a tip that is high enough to land eventually are different
+               things, and the land rate split by attempt is the only place that
+               difference is visible.
+
+               Every cell reads one number straight off `get_bundle_telemetry`.
+               Nothing here is parsed out of a string or recomputed in the
+               window: `src-tauri/src/bundle.rs` does the arithmetic in integers
+               and hands over the answer already in the unit the row prints.
+               ================================================================ -->
+          <div class="section-head">
+            <span class="label">jito bundle deck</span>
+            <span class="count" data-field="bundle-slot">&mdash;</span>
+          </div>
+
+          <div class="governor" data-region="bundle-deck">
+            <div class="gov-row">
+              <span class="label">tip floor</span>
+              <span class="num dim" data-field="tip-floor">&mdash;</span>
+            </div>
+            <div class="gov-row">
+              <span class="label">congestion</span>
+              <span class="meter" data-field="congestion-meter" aria-hidden="true"><span style="--pct: 0%"></span></span>
+              <span class="num dim" data-field="congestion">&mdash;</span>
+            </div>
+            <div class="gov-row">
+              <span class="label">leader</span>
+              <span class="num dim" data-field="leader-proximity">&mdash;</span>
+            </div>
+            <div class="gov-row">
+              <span class="label">land rate</span>
+              <span class="meter" data-field="land-rate-meter" aria-hidden="true"><span style="--pct: 0%"></span></span>
+              <span class="num dim" data-field="land-rate">&mdash;</span>
+            </div>
+            <div class="gov-row">
+              <span class="label">bundles</span>
+              <span class="mono dim" data-field="bundle-states">&mdash;</span>
+            </div>
+            <div class="gov-row">
+              <span class="label">settle p50</span>
+              <span class="num dim" data-field="bundle-settle">&mdash;</span>
+            </div>
+          </div>
+
+          <div class="pane-body">
+            <div class="exec-grid col-head" role="row">
+              <span class="label">side</span>
+              <span class="label">token</span>
+              <span class="num">size sol</span>
+              <span class="num">state</span>
+            </div>
+
+            <!--
+              <div class="exec-grid row" role="row">
+                <span class="side" data-side="buy">buy</span>
+                <span class="sym">SYMBOL</span>
+                <span class="num">0.050</span>
+                <span class="state" data-state="confirmed">confirmed</span>
+              </div>
+            -->
+            <div data-region="exec-rows" hidden></div>
+
+            <div class="empty" data-region="exec-empty">
+              <p class="empty-title">no executions</p>
+              <p class="empty-note">
+                Rows are appended per state transition and never rewritten, so
+                this list is the order's history rather than its current state.
+              </p>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- ================================================================
+           status bar: the feed's health, per endpoint
+           ================================================================ -->
+      <footer class="statusbar">
+        <div class="tick">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="tick-name">helius</span>
+          <span class="visually-hidden" data-field="helius-state">state unknown</span>
+          <span class="mono faint" data-field="helius-latency">&mdash;</span>
+        </div>
+        <div class="tick">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="tick-name">quicknode</span>
+          <span class="visually-hidden" data-field="quicknode-state">state unknown</span>
+          <span class="mono faint" data-field="quicknode-latency">&mdash;</span>
+        </div>
+        <div class="tick">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="tick-name">triton</span>
+          <span class="visually-hidden" data-field="triton-state">state unknown</span>
+          <span class="mono faint" data-field="triton-latency">&mdash;</span>
+        </div>
+
+        <!--
+          The Geyser feed's cadence, and the way into the view that explains it.
+
+          A cell rather than a button that looks like one: it reads as the rest
+          of the status bar reads and it opens the 0x100 view when it is
+          pressed. The two numbers on it are the two the view is about — how
+          much the sub-slot arrival wobbles, and how far behind the head the
+          cluster has actually agreed — because a control whose label is only a
+          word is one nobody presses until something has already gone wrong.
+        -->
+        <button
+          type="button"
+          class="tick tick-action"
+          data-action="geyser"
+          aria-haspopup="dialog"
+          title="Sub-slot arrival jitter and how far the confirmed head is behind the chain head. Opens the 0x100 telemetry view."
+        >
+          <span class="dot" aria-hidden="true"></span>
+          <span class="tick-name">subslot</span>
+          <span class="visually-hidden" data-field="geyser-state">state unknown</span>
+          <span class="mono faint" data-field="geyser-summary">&mdash;</span>
+        </button>
+
+        <div class="spacer"></div>
+
+        <!--
+          Two rates, not one. Frames is what comes off the socket and candidates
+          is what survives the filters, and on a normal day the second is a tiny
+          fraction of the first. One number in the middle would describe neither.
+        -->
+        <div class="tick">
+          <span class="label">frames/s</span>
+          <span class="mono faint" data-field="frames-per-sec">&mdash;</span>
+        </div>
+        <div class="tick">
+          <span class="label">cand/s</span>
+          <span class="mono faint" data-field="candidates-per-sec">&mdash;</span>
+        </div>
+        <div class="tick">
+          <span class="label">dropped</span>
+          <span class="mono faint" data-field="dropped-msgs">&mdash;</span>
+        </div>
+        <div class="tick">
+          <span class="label">dispatch</span>
+          <span class="mono faint" data-field="dispatch-latency">&mdash;</span>
+        </div>
+
+        <!--
+          The engine's own numbers, from `get_metrics`. Everything left of here
+          is what ingestion saw; these three are what the engine did with it.
+
+          The queue is a band and a fill rather than a raw depth, because the
+          interesting thing is the crossing and not the number: a queue that has
+          just gone from half full to nearly full is a system about to start
+          losing frames. Saturated is drawn in halt red for the same reason the
+          breaker is — past that point the rows in the panes are a sample of the
+          feed rather than the feed.
+        -->
+        <div class="tick">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="tick-name">queue</span>
+          <span class="visually-hidden" data-field="backpressure-state">state unknown</span>
+          <span class="mono faint" data-field="backpressure">&mdash;</span>
+        </div>
+        <div class="tick">
+          <span class="label">tick p50</span>
+          <span class="mono faint" data-field="tick-p50">&mdash;</span>
+        </div>
+        <!--
+          Intents and exits counted apart. Same kind of number, opposite kinds
+          of exposure: an intent in flight is money about to be at risk, an exit
+          in flight is money that is not closed yet.
+        -->
+        <div class="tick">
+          <span class="label">in flight</span>
+          <span class="mono faint" data-field="in-flight">&mdash;</span>
+        </div>
+      </footer>
+    </div>
+
+    <!--
+      The unwind confirmation.
+
+      A sibling of `.app`, not a child of it: `.app` is a three-row grid and a
+      fourth child would take a row of its own. Fixed positioning would keep it
+      out of that flow anyway, but a layout that cannot break is better than one
+      that only breaks if somebody changes `position` later.
+
+      This is the only control in the window that sells something. The kill
+      switch stops the engine and deliberately leaves exits open; this closes a
+      position that the engine already stopped managing. So unlike the kill
+      switch it asks first, and it shows the row it is asking about — the mint,
+      the side, the size and the state it was aborted from — because the whole
+      failure mode here is flattening something that is not there.
+    -->
+    <div
+      class="modal"
+      data-region="unwind-modal"
+      data-open="false"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="unwind-title"
+      hidden
+    >
+      <div class="modal-panel">
+        <div class="modal-head">
+          <span class="dot is-halt" aria-hidden="true"></span>
+          <h2 class="label" id="unwind-title">flatten open obligations</h2>
+        </div>
+
+        <div class="modal-body">
+          <div data-region="unwind-confirm-body">
+          <p class="modal-summary" data-field="unwind-summary">&mdash;</p>
+
+          <div class="oblig-grid col-head" role="row">
+            <span class="label">mint</span>
+            <span class="label">side</span>
+            <span class="num">size sol</span>
+            <span class="num">aborted from</span>
+          </div>
+          <div data-region="unwind-list"></div>
+
+          <!--
+            Shown only when something cannot be acted on yet. An abort from
+            `sent` leaves a transaction whose outcome nobody knows: it may have
+            landed, in which case there is a position, or it may never have
+            landed, in which case there is nothing and selling against it opens
+            a short. The signature has to be followed first, and until it has
+            been these are listed rather than offered.
+          -->
+          <div data-region="unwind-blocked-note" hidden>
+            <div class="section-head">
+              <h3 class="label">not reconciled — cannot be flattened yet</h3>
+            </div>
+            <p class="modal-note">
+              These were aborted before the transaction was known to land. Until
+              the signature is followed there is no way to tell a position from
+              nothing, and selling against nothing opens a new one.
+            </p>
+
+            <div class="oblig-grid col-head" role="row">
+              <span class="label">mint</span>
+              <span class="label">side</span>
+              <span class="num">size sol</span>
+              <span class="num">aborted from</span>
+            </div>
+            <div data-region="unwind-blocked"></div>
+          </div>
+
+          </div>
+
+          <!--
+            What came back, and what is still out there.
+
+            `trigger_emergency_unwind` halts the engine and stops it managing
+            these positions. Whether it also sold them depends on an execution
+            backend the shipped application does not install, so on this build
+            `exitsSent` comes back zero and every row below is still on chain.
+            The receipt's own documentation is blunt about it — a window that
+            renders this as "positions closed" is telling somebody that money
+            they still own is gone — so the result is shown as a list of things
+            to go and do, with the signature needed to find each one.
+
+            The last column is what was tried rather than what state the row is
+            in. A position with an exit transaction in the air reads "exit in
+            flight" and is the one case where going and selling it by hand is
+            the wrong move: the signature has already decided its fate and
+            nobody yet knows which way. That is a per-row fact —
+            `stranded[].exit.onNetwork` — and never a count: `exitsSent` is what
+            this press dispatched and `exitsAlreadyOut` is what an earlier one
+            left flying, so on a second press the first is zero while
+            transactions of the operator's are still on the network.
+          -->
+          <div data-region="unwind-result" hidden>
+            <p class="modal-summary" data-field="unwind-result-summary">&mdash;</p>
+
+            <div class="oblig-grid col-head" role="row">
+              <span class="label">mint</span>
+              <span class="label">side</span>
+              <span class="num">size sol</span>
+              <span class="num">exit</span>
+            </div>
+            <div data-region="unwind-stranded"></div>
+
+            <p class="modal-note" data-field="unwind-inflight" hidden></p>
+            <p class="modal-note" data-field="unwind-problems" hidden></p>
+          </div>
+
+          <p class="modal-error" data-field="unwind-error" role="alert" hidden></p>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn" data-action="unwind-cancel">cancel</button>
+          <button type="button" class="btn is-halt" data-action="unwind-confirm" disabled>
+            flatten
+          </button>
+          <button type="button" class="btn" data-action="unwind-done" hidden>close</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      The tick detail.
+
+      Opened from the forensic inspector with Enter, closed with Escape. It
+      exists because the two derived columns in that list — the price delta and
+      the volume multiple — are claims about a pair of observations, and a
+      forensic surface that shows a derived number without the two numbers it
+      came from is asking to be believed rather than checked. Everything here is
+      the pair, plus the raw frame the later one arrived on.
+    -->
+    <div
+      class="modal"
+      data-region="tick-modal"
+      data-open="false"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tick-title"
+      hidden
+    >
+      <div class="modal-panel">
+        <div class="modal-head">
+          <span class="dot" aria-hidden="true"></span>
+          <h2 class="label" id="tick-title">tick detail</h2>
+          <span class="count mono" data-field="tick-detail-slot">&mdash;</span>
+        </div>
+
+        <div class="modal-body">
+          <p class="modal-summary" data-field="tick-detail-summary">&mdash;</p>
+
+          <dl class="detail-grid" data-region="tick-detail-fields"></dl>
+
+          <div class="section-head">
+            <h3 class="label">raw frame</h3>
+          </div>
+          <pre class="raw mono" data-field="tick-detail-raw">&mdash;</pre>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn" data-action="tick-close">close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================         the 0x100 sub-slot telemetry view
+
+         The one surface in this window drawn entirely in the monospace face,
+         and the only one that shows a shape rather than a number.
+
+         **What 0x100 means.** The window keeps the last 256 sub-slot samples
+         and this draws all of them: sixteen rows of sixteen, addressed in hex
+         down the gutter — `0x00` to `0xf0` — because the thing being read here
+         is a pattern over a fixed window and a pattern is only legible if the
+         window never changes size. 0x100 is the window; the grid is 0x10 by
+         0x10; the ring wraps and the oldest sample is overwritten. A view that
+         grew as samples arrived would change shape under the eye of whoever
+         was reading it, which is the same rule every other pane in this window
+         is built on.
+
+         **What a sample is.** `geyser.rs` puts a `TickKey` on every update it
+         releases: the slot, and the micro-timestamp *within* that slot. Two
+         derived numbers come off a run of those and neither is visible in a
+         list of absolute ones:
+
+           1. **Sub-slot jitter** — how much the gap between one arrival and
+              the next differed from the gap before it. Measured against the
+              feed's own cadence rather than an assumed four hundred
+              milliseconds, for the reason `metrics.rs` gives: the chain's
+              cadence moves, and a wobble measured against a constant is mostly
+              a measurement of the constant.
+           2. **Slot drift** — how far the confirmed head is behind the chain
+              head, and the finalized head behind that. Not a latency: it is
+              how many slots of what is on screen the cluster has not yet
+              agreed on, which is the number that says whether a fill can still
+              be rolled back underneath a position.
+
+         Every cell is one sample and its glyph is its jitter band. Bands
+         rather than a continuous ramp, because the question this answers is
+         "is the feed steady", and a reader cannot tell 300µs of grey from
+         340µs of grey but can see a block of one band in a field of another.
+
+         It is a dialog rather than a pane. The three panes are the trading
+         surface and this is an instrument for reading one feed; putting it in
+         the shell would take width from the surface at every moment nobody was
+         looking at it — and would move the replay bar's wrap point, which the
+         layout suite pins.
+         ================================================================ -->
+    <div
+      class="modal"
+      data-region="geyser-modal"
+      data-open="false"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="geyser-title"
+      hidden
+    >
+      <div class="modal-panel is-wide">
+        <div class="modal-head">
+          <span class="dot" aria-hidden="true"></span>
+          <h2 class="label" id="geyser-title">0x100 subslot telemetry</h2>
+          <span class="count mono" data-field="geyser-window">0x000 / 0x100</span>
+        </div>
+
+        <div class="modal-body">
+          <p class="modal-summary" data-field="geyser-summary-line">&mdash;</p>
+
+          <!--
+            The grid and its gutter are one element per row so that the address
+            and its sixteen cells cannot drift apart: a hex offset that has
+            scrolled away from the row it addresses is worse than no address.
+          -->
+          <div class="section-head">
+            <h3 class="label">subslot jitter, 0x100 samples</h3>
+            <span class="count mono" data-field="geyser-grid-scale">&mdash;</span>
+          </div>
+
+          <div class="hexgrid mono" data-region="geyser-grid" role="img" aria-labelledby="geyser-title" aria-describedby="geyser-grid-alt"></div>
+          <p class="visually-hidden" id="geyser-grid-alt" data-field="geyser-grid-alt">
+            No samples have been received.
+          </p>
+
+          <!--
+            The legend is the key to the glyphs and is drawn from the same
+            thresholds the cells are banded by, so a band that moves moves here
+            too rather than being described by a comment that used to be true.
+          -->
+          <div class="hexlegend mono" data-region="geyser-legend"></div>
+
+          <div class="section-head">
+            <h3 class="label">the two numbers</h3>
+          </div>
+
+          <dl class="detail-grid" data-region="geyser-stats"></dl>
+
+          <div class="section-head">
+            <h3 class="label">the ordering ring</h3>
+          </div>
+
+          <dl class="detail-grid" data-region="geyser-ring"></dl>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn" data-action="geyser-close">close</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      Toast notifications.
+
+      A sibling of `.app` and fixed, like the dialogs above it, so nothing it
+      does can reach the three-row grid. Toasts are the one thing in this window
+      that appear without being asked for, which is why they are bounded, why
+      they expire, and why they are the *only* place that is true: a surface
+      that could interrupt the panes would be a surface that moves a number
+      somebody is reading.
+    -->
+    <div class="toast-container" data-region="toast-container"></div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

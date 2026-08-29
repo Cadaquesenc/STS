@@ -1,0 +1,15 @@
+{
+  "name": "sts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Gate scripts for the STS window. The window itself has no build step and no dependencies; this file exists so `npm test` runs the headless UI suite.",
+  "scripts": {
+    "test": "node ui/test/run.mjs",
+    "test:ui": "node ui/test/run.mjs",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --all-targets",
+    "test:capture": "node --test \"tools/capture/test/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

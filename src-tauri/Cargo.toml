@@ -1,0 +1,93 @@
+[package]
+name = "sts"
+version = "0.1.0"
+description = "The STS desktop backend: engine lifecycle, kill switch, and telemetry."
+edition = "2021"
+rust-version = "1.82"
+publish = false
+
+[lib]
+# `sts` is the binary, so the library beside it needs a different name. Desktop
+# only, so an rlib is all that is wanted here — the staticlib/cdylib pair in the
+# stock Tauri template exists for mobile targets this build does not have.
+name = "sts_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# The ingestion layer needs more of tokio than the lifecycle did: `sync` for the
+# channels between the sockets and the engine, `time` for reconnect backoff and
+# read timeouts, `macros` for `select!` and `#[tokio::test]`.
+# `io-util` is for the metrics exporter's socket: it reads one request line
+# and writes one response, and `AsyncReadExt`/`AsyncWriteExt` live behind it.
+# `signal` is for the headless daemon, which has no window whose close button
+# means "stop": SIGINT and SIGTERM are the only way anything asks it to.
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "signal"] }
+# The provider feeds are Solana JSON-RPC pubsub over WSS. `native-tls` rather
+# than rustls on purpose: it uses Security.framework on macOS and SChannel on
+# Windows, so the build needs no cmake, no nasm and no vendored C crypto.
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "native-tls"] }
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+# Reference-counted frame buffers. A frame is cloned between the socket task and
+# the parser without copying its bytes.
+bytes = "1"
+crossbeam-channel = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.37", features = ["bundled"] }
+parking_lot = "0.12"
+# The alerting webhook posts from a thread of its own rather than from the
+# tokio runtime, so it wants the synchronous TLS API. This is already in the
+# tree as `tokio-tungstenite`'s backend — naming it directly costs no extra
+# build and keeps the same Security.framework/SChannel story.
+native-tls = "0.2"
+
+# --- the Geyser gRPC transport, off by default ------------------------------
+#
+# `geyser.rs` is compiled and tested without any of this: the sequencing, the
+# re-org handling and the reconnect schedule are transport-independent by
+# construction, and `geyser::MockStream` is what drives them in the tests.
+#
+# Turning the feature on adds about ninety crates — tonic, hyper, h2, tower,
+# prost, a vendored protobuf compiler for the build script — and, more to the
+# point, a *second* TLS stack beside the `native-tls` the websocket feed uses.
+# Two trust stores in one process that holds keys is a real cost, so it is paid
+# deliberately by the build that dials a real Geyser endpoint and by no other.
+tonic = { version = "0.14", optional = true, default-features = false, features = [
+    # Client only: `channel` is the client transport, `codegen` is what the
+    # generated stub needs. The server half of tonic is left out entirely.
+    "channel",
+    "codegen",
+    "tls-native-roots",
+] }
+prost-types = { version = "0.14", optional = true }
+# `default-features = false` drops two things that were never asked for.
+#
+# The first is the gzip and zstd codecs the `tonic-compression` default turns
+# on. This client never negotiates either — it sets no `accept_compressed` and
+# no `send_compressed` — so all they contribute is `zstd-sys`, a vendored C
+# build, in a workspace whose whole TLS choice was made to avoid exactly that.
+#
+# The second is the `Vec<u8>` account payload. `account-data-as-bytes` compiles
+# `SubscribeUpdateAccountInfo.data` as a `bytes::Bytes` instead, and prost fills
+# a `Bytes` field by *splitting the read buffer* rather than allocating and
+# copying into a fresh vector. An account write is the highest-volume message on
+# this stream and its payload is the largest part of it, so that one line is the
+# difference between one allocation and one memcpy per curve write and neither.
+yellowstone-grpc-proto = { version = "12.6", optional = true, default-features = false, features = [
+    "tonic",
+    "account-data-as-bytes",
+] }
+
+[features]
+default = []
+geyser-grpc = ["dep:tonic", "dep:prost-types", "dep:yellowstone-grpc-proto"]
+
+# A release build of the engine is one a person is trusting with money, so it is
+# built to be debuggable after the fact: symbols kept, overflow checks left on.
+[profile.release]
+debug = 1
+overflow-checks = true

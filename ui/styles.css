@@ -1,0 +1,2521 @@
+/* ==========================================================================
+   STS — design tokens and the three-pane shell.
+
+   Loaded straight from `ui/` by Tauri's `frontendDist`; there is no bundler and
+   no build step, so this file is the whole stylesheet and everything in it has
+   to work as-is in WebKit.
+
+   The look is deliberately flat: one dark ground, hairline borders, no shadows,
+   no rounded corners, no colour except where colour means something. A trading
+   surface earns attention by putting numbers where the eye already is, not by
+   decorating them, and every pixel of chrome is a pixel not spent on data.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* --- ground ----------------------------------------------------------- */
+  /* One base, and two lifts off it. The lifts are white at very low alpha
+     rather than lighter greys, so a panel over a panel keeps stacking
+     correctly without a third and fourth hand-picked colour. */
+  --ground: #0a0a0a;
+  --panel: rgba(255, 255, 255, 0.05);
+  --panel-strong: rgba(255, 255, 255, 0.07);
+
+  /* --- text ------------------------------------------------------------- */
+  /* Not pure white. #fff on #0a0a0a is enough contrast to bloom on an OLED
+     panel and enough to tire on a long session; 0.92 reads identically and
+     does neither. The steps below it are a real hierarchy — each one is far
+     enough from its neighbour to be legible as "less important". */
+  --text: rgba(255, 255, 255, 0.92);
+  --text-dim: rgba(255, 255, 255, 0.56);
+  --text-faint: rgba(255, 255, 255, 0.34);
+  --text-ghost: rgba(255, 255, 255, 0.18);
+
+  /* --- lines ------------------------------------------------------------ */
+  --border: rgba(255, 255, 255, 0.10);
+  --border-soft: rgba(255, 255, 255, 0.06);
+
+  /* --- state ------------------------------------------------------------ */
+  /* Four meanings, four colours, and nothing else gets one. Green is not
+     "good", it is "live". Red is not "bad", it is "stopped or at risk". */
+  --live: #4ade80;
+  --warn: #fbbf24;
+  --halt: #f87171;
+  --accent: #60a5fa;
+
+  /* --- type ------------------------------------------------------------- */
+  /* Inter first, then the system UI face. macOS does not ship Inter, so most
+     of the time this renders as SF, which is metrically close enough that the
+     layout does not move. If the exact Inter face matters, the fix is to embed
+     a woff2 in this directory — not a webfont link, since the app has to work
+     with no network. */
+  --font: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Data uses a real mono face. tabular-nums alone lines up digits but not
+     the base58 keys next to them, and a wallet address that does not sit in a
+     fixed column is one you cannot compare by eye. */
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* --- metrics ---------------------------------------------------------- */
+  /* One scale, so panes line up across the whole window without anyone
+     measuring. */
+  --row: 26px;
+  --gutter: 12px;
+  --bar: 34px;
+}
+
+/* --------------------------------------------------------------------------
+   reset
+   -------------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  /* Stated once, globally, rather than trusted. A default border radius or
+     shadow arriving from a user-agent style on a control is the exact thing
+     this design is defined by not having. */
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden; /* Panes scroll; the window never does. */
+}
+
+body {
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.45;
+  /* The specified tracking. Inter and SF are both drawn a little loose for
+     dense screen work; pulling in 0.04em is what makes a column of labels read
+     as one block instead of a row of separate words. */
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Nothing here is a document, so nothing here should be selectable by a stray
+   drag. The parts that are worth copying — keys, signatures — opt back in. */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+.mono,
+.key,
+input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+figure {
+  margin: 0;
+  padding: 0;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: default;
+}
+
+/* --------------------------------------------------------------------------
+   shared pieces
+   -------------------------------------------------------------------------- */
+
+/* The micro-label: uppercase, small, and tracked *out* rather than in.
+   The -0.04em on body is right for text at reading size and wrong for 10px
+   capitals, which need air between the letters to stay apart at all. This is
+   the one deliberate exception to the global tracking. */
+.label {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A truncated key. Fixed width so a column of them is a column, and the middle
+   is never the part that gets cut — the last four characters of an address are
+   how a person recognises it. */
+.key {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.live {
+  color: var(--live);
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.halt {
+  color: var(--halt);
+}
+
+.dim {
+  color: var(--text-dim);
+}
+
+.faint {
+  color: var(--text-faint);
+}
+
+/* Hiding, made to actually hide.
+   `hidden` is how a pane swaps between its rows and its empty state, and how
+   the radar filter drops a row. Both targets carry a `display` of their own
+   from a class rule, which outranks the user agent's `[hidden]` rule and leaves
+   the element visible. Nothing can outrank a class that has not been written
+   yet, so this is the one `!important` in the file — and the alternative is a
+   filtered-out row staying on screen, which is a wrong number rather than an
+   ugly one. */
+[hidden] {
+  display: none !important;
+}
+
+/* The status dot. A 5px square, not a circle — the shell has no curves. */
+.dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  background: var(--text-ghost);
+  vertical-align: 1px;
+}
+
+.dot.is-live {
+  background: var(--live);
+}
+
+.dot.is-warn {
+  background: var(--warn);
+}
+
+.dot.is-halt {
+  background: var(--halt);
+}
+
+/* --------------------------------------------------------------------------
+   window frame
+   -------------------------------------------------------------------------- */
+
+/* Three fixed bars and one flexible middle. The header and footer are always
+   the same height whatever is in them, so the panes never resize because a
+   status line got longer. */
+/* Four rows now, and the second is `auto`. The replay bar lives in it and is
+   `hidden` outside replay, which — with the `[hidden]` rule above — takes the
+   element out of layout entirely and collapses the track to zero. So the shell
+   is still three bars and a middle when the engine is live, and the middle is
+   still the only part that flexes. */
+.app {
+  display: grid;
+  grid-template-rows: var(--bar) auto minmax(0, 1fr) var(--bar);
+  height: 100%;
+}
+
+.topbar,
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 var(--gutter);
+  min-width: 0;
+}
+
+.topbar {
+  border-bottom: 1px solid var(--border);
+}
+
+.statusbar {
+  border-top: 1px solid var(--border);
+  gap: 0;
+  /* The same rule the replay bar keeps, and for the same reason: panes scroll,
+     bars clip, and the frame never does either. Twelve cells at their natural
+     widths are wider than the window's 960px minimum, so below about 1330px
+     the rightmost of them run past the edge. Clipping them is what stops that
+     overflow reaching the document and giving the whole window a horizontal
+     scrollbar — which would move every pane rather than hiding one number.
+
+     The order the cells are written in is therefore the order they survive in.
+     Feed health is first because a feed that has stopped is the fact that
+     invalidates every number to its right. */
+  overflow: hidden;
+  /* And positioned, which is what makes that clip apply to everything in here
+     rather than to most of it. Each endpoint cell carries a `.visually-hidden`
+     span — absolutely positioned, one pixel, the state a reader is told and a
+     screen does not show. An absolutely positioned box is clipped by an
+     ancestor's `overflow` only when that ancestor is its containing block, so
+     against a static bar those spans escaped the clip and stretched the
+     document by the few pixels the last of them stuck out. The window then had
+     a horizontal scrollbar because of text nobody can see. */
+  position: relative;
+}
+
+.brand {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: lowercase;
+  color: var(--text);
+}
+
+/* Mode is the single most consequential fact on screen — live spends real
+   money and paper does not — so it gets a box of its own rather than being one
+   more item in a row of status text. */
+.mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  /* Reserved, like every other cell in this bar, and for a reason that only
+     shows up once per run: the chip opens saying `no engine` and the first
+     status turns that into `running`, which is two characters narrower. The
+     chip shrinks, and `topbar-stats` — the slot, the feeds, the uptime, the
+     breaker — slides twelve pixels left underneath whoever was reading it.
+
+     It happens exactly once, on the first answer, which is why the
+     `flex: 0 0 auto` discipline in the status bar does not catch it: that
+     stops a cell moving a *second* time, and this is the first.
+
+     Wide enough for `no engine`, which is the longest of the seven words
+     `renderEngineStatus` can put here — and the suite checks it against all
+     seven rather than against the two somebody thought of. 88px was three
+     pixels short, and the assertion caught that before this comment was. */
+  min-width: 92px;
+}
+
+.mode .label {
+  color: inherit;
+}
+
+.mode[data-mode="live"] {
+  border-color: rgba(248, 113, 113, 0.4);
+  color: var(--halt);
+}
+
+.mode[data-mode="paper"] {
+  border-color: rgba(96, 165, 250, 0.35);
+  color: var(--accent);
+}
+
+.mode[data-mode="halted"] {
+  color: var(--text-faint);
+}
+
+/* The starting state, and the honest one: the window is up and has not been
+   told anything yet. It is a separate value from "halted" on purpose — halted
+   is a decision the engine made, unknown is the absence of one, and showing
+   the first when the second is true is how a stopped engine gets mistaken for
+   a running one. */
+.mode[data-mode="unknown"] {
+  border-style: dashed;
+  color: var(--text-ghost);
+}
+
+/* Fixed columns, not a flex row that grows.
+
+   Mono digits are the same width as each other and are not the same width as
+   an em dash, so the moment the first slot arrives every stat to the right of
+   it slides along — a shift of a few pixels under the eye of somebody reading
+   the one below. Each stat gets a cell wide enough for the widest value it can
+   hold, and the values arrive into space that was already reserved. */
+.topbar-stats {
+  display: grid;
+  /* Each column is its label plus the widest value that column can hold: an
+     eleven-digit slot with its separators, `10/12` feeds, `365d 23h` of uptime,
+     the word `armed`, and a SOL price with its label and its field. Measured
+     rather than guessed — the suite checks every one of these cells for a
+     clipped value at every width the window can be. */
+  grid-template-columns: 118px 68px 102px 98px 86px;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* A label and its value on one line. The value is mono so that a column of
+   these in the top bar stays put as the numbers change width. */
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.stat > .mono {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+/* The kill switch. Bordered in red at rest rather than filled: a solid red
+   block reads as an alarm that is already going off, and this one is a control
+   that is available. It fills on hover, when it is about to be pressed. */
+.kill {
+  height: 22px;
+  padding: 0 12px;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+  color: var(--halt);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.kill:hover {
+  background: var(--halt);
+  color: #0a0a0a;
+}
+
+.kill:active {
+  background: #fca5a5;
+}
+
+.kill:focus-visible {
+  outline: 1px solid var(--halt);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   the replay toggle and the replay status bar
+   -------------------------------------------------------------------------- */
+
+/* A switch drawn as a switch: a track and a knob, both square, because the
+   shell has no curves and a pill here would be the only rounded thing in the
+   window. It reads as off until the engine says otherwise. */
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 22px;
+  padding: 0 9px 0 7px;
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+}
+
+.toggle:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--text-dim);
+}
+
+.toggle .label {
+  color: inherit;
+}
+
+.toggle-track {
+  position: relative;
+  display: block;
+  width: 18px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 6px;
+  height: 6px;
+  background: var(--text-faint);
+  /* Position, not width or margin: transforming the knob cannot reflow the row
+     it sits in, and the row it sits in is the top bar. */
+  transform: translateX(0);
+  transition: transform 0.12s linear, background-color 0.12s linear;
+}
+
+.toggle[aria-checked="true"] {
+  border-color: rgba(251, 191, 36, 0.45);
+  color: var(--warn);
+}
+
+.toggle[aria-checked="true"] .toggle-track {
+  background: rgba(251, 191, 36, 0.22);
+}
+
+.toggle[aria-checked="true"] .toggle-knob {
+  transform: translateX(10px);
+  background: var(--warn);
+}
+
+/* Neither on nor off. The engine has been asked and has not answered, and a
+   switch that shows one of its two states while it does not know is a switch
+   that will be read as an answer. */
+.toggle[aria-checked="mixed"] {
+  border-style: dashed;
+  color: var(--text-ghost);
+}
+
+.toggle:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The bar itself. Amber throughout, and the one horizontal band in the window
+   that is not the top or the bottom of it, because what it says — that no
+   number below it came from the network — has to survive being glanced at. */
+.replaybar {
+  display: flex;
+  /* The bar wraps rather than clipping or squeezing a fact, at every width and
+     not only at the narrow ones. Nothing on it is decoration — the slot, the
+     record count, the fixture and whether its chain was checked are each the
+     difference between a number that means something and one that does not —
+     and a chain head ellipsised down to "9f2…" is a fact that is on the bar
+     without being on it. The row the bar sits in is `auto`, so the panes give
+     up the height rather than the bar giving up a fact.
+
+     One line is still one line: `min-height` rather than `height`, so at a
+     width where everything fits the bar is the 26px band it always was. */
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  min-height: 26px;
+  padding: 4px var(--gutter);
+  border-bottom: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+  color: var(--warn);
+  min-width: 0;
+}
+
+.replay-word {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.replay-facts {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* The three facts on the bar that change while a fixture is playing, each in a
+   cell wide enough for the widest thing it will ever say.
+
+   Same reservation as the top bar and the status bar, and here it buys
+   something more than tidiness. The bar wraps, and where it wraps is decided by
+   how wide its contents are — so without this, a record count going from 9,999
+   to 10,000 is enough to push the controls onto a second line at any width in
+   the ~30px band above the wrap point. The bar grows by 31px, every pane below
+   it moves down by 31px, and nothing was resized and nobody pressed anything: a
+   counter ticked over while somebody was reading the row under it. That is the
+   one thing `layout.mjs` says the window must never do, and the widths it
+   checks happened to sit either side of the band rather than in it.
+
+   Reserved in `ch` against the mono face, where a digit and a separator are the
+   same width, so each number below is the character count of the value it is
+   holding room for and can be checked by eye:
+
+     slot       9,999,999,999                    a ten-digit slot with its
+                                                 separators — Solana is at ten
+                                                 digits and gains one about
+                                                 every two centuries
+     record     1,000,000 / 1,000,000            both halves at seven digits;
+                                                 the left one cannot pass the
+                                                 right, so the right is the cap
+     slot clock virtualised · 1,000,000 clamped  the clamp counter is bounded by
+                                                 the record count above it
+
+   Left rather than right aligned, unlike the two bars this borrows from. There
+   the values sit in a grid and right alignment lines the digits up down the
+   column; here each one sits beside its own label, and pushing it to the far
+   edge of a reserved cell would park it against the *next* stat's label
+   instead. The slack goes on the right, where it separates the pair from what
+   follows.
+
+   The fixture and the chain head are deliberately not in here. Neither can
+   change without a different recording being opened, and opening one is a
+   deliberate act the operator performed — the same class of event as resizing
+   the window, and not the class this is about. */
+.replaybar [data-field="replay-slot"] {
+  min-width: 13ch;
+  text-align: left;
+}
+
+.replaybar [data-field="replay-progress"] {
+  min-width: 21ch;
+  text-align: left;
+}
+
+.replaybar [data-field="replay-clock"] {
+  min-width: 31ch;
+  text-align: left;
+}
+
+.replaybar .label {
+  color: rgba(251, 191, 36, 0.62);
+}
+
+.replaybar .mono,
+.replaybar .key {
+  color: var(--warn);
+}
+
+.replaybar .mono.dim,
+.replaybar .key {
+  color: rgba(251, 191, 36, 0.72);
+}
+
+/* Whether the fixture's hash chain was checked, as a word. Never green unless
+   the engine actually verified it: `unverified` and `verified` are different
+   claims and only one of them is evidence. */
+.integrity {
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.integrity[data-state="verified"] {
+  color: var(--live);
+}
+
+.integrity[data-state="unverified"] {
+  color: var(--text-faint);
+  border-style: dashed;
+}
+
+.integrity[data-state="broken"] {
+  color: var(--halt);
+  background: rgba(248, 113, 113, 0.12);
+}
+
+/* The two control groups, as one thing that wraps as one thing. `faster` walks
+   the ladder the chips draw, so a wrapped bar that put them on separate lines
+   with the whole width of the facts between them would be hiding the only
+   relationship on the bar worth seeing. */
+.replay-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+}
+
+/* The transport and the speeds are the same kind of control — a row of chips
+   drawn from the engine's answer — so they are the same object with two names,
+   and they sit next to each other rather than at opposite ends of the bar. */
+.transport,
+.speeds {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+/* The transport reserves its width instead of taking it.
+   
+   The same rule the bar's fact cells keep, applied to a control instead of a
+   number, and for the same reason. Where this bar wraps is decided by how wide
+   its contents are, and the suite sweeps the band just below that point for
+   layout shift — so if the wrap point moves, every assertion written against
+   that band is measuring a different band. Left to fit its labels, the point
+   moved by twenty-eight pixels the moment a button's word got shorter.
+
+   202px is room for the four controls at their fullest wording, which is what
+   the widest of them has been. Editing a label is now a change to what the
+   button says and not to where the window reflows. */
+.transport {
+  min-width: 202px;
+}
+
+.transport .chip,
+.speeds .chip {
+  color: rgba(251, 191, 36, 0.55);
+}
+
+.transport .chip:hover,
+.speeds .chip:hover {
+  color: var(--warn);
+}
+
+.transport .chip[aria-pressed="true"],
+.speeds .chip[aria-pressed="true"] {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.14);
+  color: var(--warn);
+}
+
+/* Unavailable, not dimmed a little. `step` is only offered while the playhead
+   is held and `faster` only while there is a notch left to go up, and a button
+   that looks one press away from doing something it will refuse is worse than
+   one that looks like what it is. Last in the file's order on purpose, so it
+   wins over the hover and pressed rules above at the same specificity. */
+.transport .chip:disabled,
+.speeds .chip:disabled,
+.transport .chip:disabled:hover,
+.speeds .chip:disabled:hover {
+  border-color: transparent;
+  background: none;
+  color: rgba(251, 191, 36, 0.22);
+}
+
+/* --------------------------------------------------------------------------
+   three-pane shell
+   -------------------------------------------------------------------------- */
+
+/* Left is a fixed-width feed, middle takes the slack, right is a fixed-width
+   control column. minmax(0, 1fr) on the middle is what stops a long unbroken
+   signature in the forensic pane from pushing the other two panes off screen —
+   without the 0 minimum, a grid track refuses to shrink below its content. */
+.panes {
+  display: grid;
+  grid-template-columns:
+    minmax(240px, 300px)
+    minmax(0, 1fr)
+    minmax(300px, 360px);
+  min-height: 0;
+}
+
+/* A column where the body takes the slack and everything above it keeps its own
+   height. This was three explicit grid rows, which was correct for exactly three
+   children and wrong the moment there were four: the unwind banner is hidden
+   until there is something to unwind, and the day it appears it would have taken
+   the flexible row for itself and squashed the execution list into whatever was
+   left. Naming the body as the part that stretches means the count of things
+   above it stops mattering. */
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+
+/* Headers, tool rows, the subject line and the unwind banner are all sized by
+   their content and must not be compressed to make room for a long list. */
+.pane > * {
+  flex: 0 0 auto;
+}
+
+.pane > .pane-body {
+  flex: 1 1 auto;
+}
+
+.pane:last-child {
+  border-right: 0;
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 var(--gutter);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--panel);
+}
+
+.pane-head .label {
+  color: var(--text-dim);
+}
+
+/* The count takes the whole of the space left over rather than shrinking to fit
+   its own text.
+
+   Sized to its content and pushed right, it grows leftward, and its own left
+   edge moves every time the number gains a digit — a layout shift of the
+   element a person is reading. Filling the remainder instead pins both edges:
+   the heading beside it is a fixed string, so the box never changes, and only
+   the glyphs inside it move. It also gives the heading its natural width back,
+   which is what keeps a long one on a single line in a narrow pane. */
+.pane-head .count,
+.section-head .count {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The filter strip under a pane head. Same height as a data row, so the pane
+   reads as one grid from the top. */
+.pane-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--row);
+  padding: 0 var(--gutter);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.chip {
+  height: 17px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  color: var(--text-faint);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chip:hover {
+  color: var(--text-dim);
+}
+
+.chip[aria-pressed="true"] {
+  border-color: var(--border);
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+/* `scroll`, not `auto`, and that is the whole of the rule above it.
+
+   `auto` reserves the scrollbar track at the moment the content first overflows
+   — which, on a pane being appended to ten times a second, is a moment that
+   arrives while somebody is reading it, and takes eight pixels out of every
+   column in the pane when it does. The track is reserved from the start
+   instead. It costs eight pixels that were going to be spent anyway. */
+.pane-body {
+  min-height: 0;
+  overflow-y: scroll;
+  overflow-x: hidden;
+}
+
+/* Panes are scrolled, often, while watching something else on screen. A visible
+   bar that changes the layout when it appears would move the columns. */
+.pane-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.pane-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.pane-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* --------------------------------------------------------------------------
+   data rows
+   -------------------------------------------------------------------------- */
+
+/* One grid definition drives both the header and the rows, so a column cannot
+   drift out of alignment with its own heading. Changing a width means changing
+   it once. */
+.radar-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px 62px 44px;
+  gap: 10px;
+  align-items: center;
+  padding: 0 var(--gutter);
+}
+
+.col-head {
+  height: 22px;
+  border-bottom: 1px solid var(--border-soft);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  /* Opaque, not the translucent panel token: this sits over scrolling rows and
+     a semi-transparent header would let them read through it. */
+  background: #101010;
+}
+
+/* A heading that wraps is a heading that changes the row height, which puts
+   every column below it out of line with the one it belongs to. They clip
+   instead. */
+.col-head > * {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Ghost (0.18) is too far down to read at 9.5px capitals. This is the one place
+   that needs its own value rather than a token: dim enough to sit behind the
+   data, present enough to be read when looked at. */
+.col-head .label {
+  color: rgba(255, 255, 255, 0.26);
+}
+
+.col-head .num {
+  color: rgba(255, 255, 255, 0.26);
+  font-family: var(--font);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* A heading that is also a control, and looks like neither more than it did.
+   It inherits everything from the header it sits in — the reset above already
+   takes the border, the padding and the font off a button — so the only thing
+   this adds is that it can be pointed at and that the sorted one is legible
+   rather than sitting at 26% white with the rest. */
+.col-head .sort {
+  cursor: pointer;
+  color: inherit;
+  /* A user agent takes `text-transform` off a form control, so without this the
+     six headings that became controls are the only lowercase ones in a row of
+     capitals. */
+  text-transform: inherit;
+}
+
+.col-head .sort:hover {
+  color: var(--text-dim);
+}
+
+.col-head .sort[data-active="true"] {
+  color: var(--text);
+}
+
+/* A letter that is a symbol rather than a word, and is therefore not uppercased
+   with the words around it. Capital beta is the Latin B to anybody who is not
+   looking for the difference, and a column headed "B BPS" has lost the one
+   thing its heading was for. */
+.col-head .sym {
+  text-transform: none;
+}
+
+/* The direction, for whoever is looking rather than listening; `aria-sort` on
+   the header is the same fact for whoever is listening. Only the sorted column
+   draws one — an arrow on every heading is six claims about an order five of
+   them are not in. */
+.col-head [aria-sort="descending"] .sort::after {
+  content: "\2193";
+  margin-left: 3px;
+}
+
+.col-head [aria-sort="ascending"] .sort::after {
+  content: "\2191";
+  margin-left: 3px;
+}
+
+.row {
+  height: var(--row);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.row:hover {
+  background: var(--panel);
+}
+
+.row[aria-selected="true"] {
+  background: var(--panel-strong);
+  /* An inset marker rather than an outer border, so selecting a row does not
+     change its height and shift every row below it by a pixel. */
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.row .sym {
+  font-weight: 500;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The curve percentage doubles as its own progress bar: the number is the
+   value and the fill behind it is the same value, so the column can be read
+   either by scanning the bars or by reading the digits. */
+.curve {
+  position: relative;
+  padding: 0 3px;
+}
+
+.curve::before {
+  content: "";
+  position: absolute;
+  inset: 4px auto 4px 0;
+  width: var(--pct, 0%);
+  background: rgba(96, 165, 250, 0.22);
+}
+
+.curve span {
+  position: relative;
+}
+
+/* --------------------------------------------------------------------------
+   forensic pane
+   -------------------------------------------------------------------------- */
+
+.subject {
+  padding: 10px var(--gutter);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* The subject line fills in when a candidate is picked: an em dash becomes a
+   forty-four character account, twice. Left to their natural widths the two
+   keys would push the labels between them along the row as they arrived, so
+   each part of the line is given its share up front — the symbol a fixed cell,
+   the labels their own text, and the keys an equal split of what is left. What
+   the keys hold changes; where they sit does not. */
+.subject-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.subject-line > .subject-sym {
+  flex: 0 0 116px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.subject-line > .label {
+  flex: 0 0 auto;
+}
+
+.subject-line > .key {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.subject-sym {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+/* A four-up block of derived scores. Fixed columns rather than auto-fit: these
+   four belong together and reflowing them to three-plus-one would break the
+   reading order they are meant to be compared in. */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.metric {
+  padding: 9px var(--gutter);
+  border-right: 1px solid var(--border-soft);
+  min-width: 0;
+}
+
+.metric:last-child {
+  border-right: 0;
+}
+
+.metric-value {
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.metric-note {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 var(--gutter);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--panel);
+}
+
+/* --------------------------------------------------------------------------
+   bonding curve and liquidity migration
+   -------------------------------------------------------------------------- */
+
+.curve-module {
+  padding: 9px var(--gutter) 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* A fixed-height track with the fill inside it. Both the fill and the
+   graduation marker are absolutely positioned within it, so neither the value
+   changing nor the marker appearing can alter the module's height and move the
+   cluster scores below it. */
+.curve-track {
+  position: relative;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.curve-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--pct, 0%);
+  background: var(--accent);
+}
+
+/* Complete is not "further along". It is a different pool: §17 of the replay
+   specification makes graduation a hard branch, because a quote off a finished
+   curve is a quote off nothing. */
+.curve-fill[data-complete="true"] {
+  background: var(--live);
+}
+
+.curve-fill[data-risk="exposed"] {
+  background: var(--warn);
+}
+
+/* Where the curve migrates. Drawn at the right edge of the track rather than
+   as a number in the legend so the bar can be read as a distance. */
+.curve-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.30);
+}
+
+/* Three tracks rather than a flex row with a spacer in it.
+
+   The percentage arrives where an em dash was and the remainder is the longest
+   string in the module; in a flex row the first would push the label after it
+   along and the second would grow leftward into the gap. Given a track each,
+   both change what they say without changing where they are. */
+.curve-legend {
+  display: grid;
+  grid-template-columns: 6ch max-content minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+  margin-top: 6px;
+  font-size: 10.5px;
+}
+
+.curve-legend > :last-child {
+  text-align: right;
+}
+
+/* Four facts on one row, each a term over its value over its note. A grid
+   rather than a flex row because the four have to line up with each other, and
+   `dl` is what a list of term/value pairs actually is. */
+.curve-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 9px;
+}
+
+.curve-fact {
+  min-width: 0;
+}
+
+.curve-fact .num {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text);
+}
+
+.curve-note {
+  margin: 1px 0 0;
+  font-size: 9.5px;
+  line-height: 1.35;
+  color: var(--text-ghost);
+}
+
+/* The sandwich reading, as a word in the section head. Three states and a
+   fourth for not knowing, and the fourth is drawn as a dashed outline rather
+   than as any of the three. */
+.badge {
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.badge[data-risk="unknown"] {
+  color: var(--text-ghost);
+  border-style: dashed;
+}
+
+.badge[data-risk="exposed"] {
+  color: var(--halt);
+  background: rgba(248, 113, 113, 0.10);
+}
+
+.badge[data-risk="guarded"] {
+  color: var(--live);
+}
+
+.badge[data-risk="graduated"] {
+  color: var(--text-faint);
+}
+
+/* The evidence bands on the wallet cluster head, which is the same element
+   reading a different question: not "how exposed is this curve" but "did the
+   funding graph under these numbers survive being checked against the chain".
+
+   Four states, and `unknown` above is one of them — a lineage nobody checked
+   gets the same dashed outline as a reading nobody could take, because that is
+   exactly what it is. `verified` and `contradicted` borrow the live and halt
+   colours rather than defining their own, so one palette change moves every
+   badge in the window together.
+
+   `unconfirmed` is the state that needed a colour of its own. It is neither
+   clean nor alarming: providers were asked and fewer of them agreed than the
+   quorum wants, which is UNKNOWN with the asking already done. Drawn in the
+   warn amber, dashed like `unknown`, because it is a kind of not-knowing and
+   not a kind of finding. */
+.badge[data-risk="verified"] {
+  color: var(--live);
+}
+
+.badge[data-risk="unconfirmed"] {
+  color: var(--warn);
+  border-style: dashed;
+}
+
+.badge[data-risk="contradicted"] {
+  color: var(--halt);
+  background: rgba(248, 113, 113, 0.10);
+}
+
+/* --------------------------------------------------------------------------
+   tick stream forensic inspector
+   -------------------------------------------------------------------------- */
+
+/* Wider than the other tool strips: two text inputs and two chips do not fit
+   in a row sized for chips alone, and a strip that wraps changes the height of
+   everything under it. */
+.stream-tools {
+  gap: 10px;
+  height: 30px;
+}
+
+.filter {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+/* A field drawn as a cell rather than as a control: one hairline underneath,
+   nothing else. It is fixed width so that typing in it cannot widen the strip
+   and push the chips beside it out of the pane. */
+.filter-input {
+  width: 62px;
+  height: 18px;
+  padding: 0 4px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-input::placeholder {
+  color: var(--text-ghost);
+}
+
+.filter-input:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+
+.filter-input:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* A field holding a value that is not a number yet. Rejected input is shown as
+   rejected rather than silently ignored — a filter that is not applied and does
+   not say so is a row count somebody will trust. */
+.filter-input[aria-invalid="true"] {
+  border-bottom-color: var(--halt);
+  color: var(--halt);
+}
+
+/* A volume multiple is one or two digits and a decimal point, not a slot
+   number. The field is sized for what goes in it so the strip spends its width
+   on the controls that need it. */
+.filter-input.narrow {
+  width: 44px;
+}
+
+/* --- what SOL is worth ---------------------------------------------------
+   Unset is drawn as a warning rather than left blank. Until this is set the
+   engine has no way to compare a lamport number against a dollar threshold, so
+   every candidate reads as too small to trade — and from the panes below, an
+   engine refusing everything looks exactly like a quiet market. The colour is
+   the only thing that tells those two apart at a glance.
+
+   The colour is on the value and not on the rule under it: that rule is a
+   structural separator and has to stay the spec's hairline in every state. */
+.stat[data-state="unset"] .filter-input,
+.stat[data-state="unset"] .filter-input::placeholder {
+  color: var(--warn);
+}
+/* A field with no engine behind it looks like one, rather than like a control
+   that silently swallows what you type into it. */
+.stat .filter-input:disabled {
+  color: var(--text-ghost);
+  border-bottom-color: var(--border-soft);
+}
+
+.filter-state {
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* The filter strip holds three fields and three chips, and there are widths at
+   which those do not fit on one line.
+
+   It wraps rather than squashing them. A chip clipped to "ANOMALIE" is a
+   control nobody can be certain of, and a strip that is one line taller is only
+   one line taller — the pane body below it scrolls and gives the height up. The
+   minimum keeps it exactly a row high at every width where it does fit on one
+   line, so this costs nothing where nothing is wrong. */
+.stream-tools {
+  height: auto;
+  min-height: var(--row);
+  flex-wrap: wrap;
+  gap: 3px 6px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+/* A section with a list in it gets its own box, and the box never changes
+   height.
+
+   The forensic pane is a stack of sections that are appended to independently.
+   Left in the pane's own flow, a row arriving in one of them — or an empty
+   state swapping for a longer one — moves every section under it down while
+   somebody is reading one. So each list section scrolls inside a fixed box and
+   the empty states live in the same box, which makes the pane a stack of
+   fixed-height sections whose positions do not depend on what is in them.
+
+   The scrollbar track is reserved from the start, for the reason `.pane-body`
+   reserves its own. */
+.section-viewport,
+.stream-viewport {
+  overflow-y: scroll;
+  overflow-x: hidden;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* Four wallets under the heading. */
+.section-viewport {
+  height: 152px;
+}
+
+/* Eight ticks under the heading: enough to see a pattern in, small enough that
+   the event trail is still on screen underneath. */
+.stream-viewport {
+  height: 232px;
+}
+
+.section-viewport::-webkit-scrollbar,
+.stream-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+
+.section-viewport::-webkit-scrollbar-thumb,
+.stream-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.section-viewport::-webkit-scrollbar-thumb:hover,
+.stream-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* The empty states share the box with the list rather than sitting under it,
+   and they do not stretch it: whichever is showing, the height is the same. */
+.section-viewport .empty,
+.stream-viewport .empty {
+  min-height: 0;
+  padding: 20px var(--gutter);
+}
+
+.stream-grid {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) 58px 46px 56px 46px 38px;
+  gap: 9px;
+  align-items: center;
+  padding: 0 var(--gutter);
+}
+
+/* The row is focusable so j/k can move a real focus rather than a painted
+   imitation of one, and the marker is inset for the same reason the radar's is:
+   a border would change the row height and step every row below it. */
+.stream-grid.row:focus {
+  outline: none;
+  background: var(--panel-strong);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.stream-grid.row:focus-visible {
+  outline: none;
+}
+
+.stream-grid.row[aria-selected="true"] {
+  background: var(--panel-strong);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* The volume multiple. Amber is "far outside what this account usually moves",
+   and the dash is "not enough observations of this account to say", which is a
+   different statement and never renders as 1x. */
+.vol {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0;
+  text-align: right;
+  color: var(--text-faint);
+}
+
+.vol[data-anomaly="true"] {
+  color: var(--warn);
+}
+
+/* β, in basis points, beside the multiple it is not.
+   Two flags on one row that mean different things get different colours: amber
+   is "this account does not usually move this much", which is a screening
+   heuristic, and red is "a front-run on this buy clears fees", which is a
+   threshold the specification derives. Reading either as the other is the one
+   mistake this column can cause, so they never share a colour. */
+.risk {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.risk[data-sandwich="true"] {
+  color: var(--halt);
+}
+
+/* --------------------------------------------------------------------------
+   tick detail
+   -------------------------------------------------------------------------- */
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+  padding: 2px var(--gutter) 8px;
+}
+
+.detail-grid dt {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.detail-grid dd {
+  margin: 0;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.raw {
+  margin: 0;
+  padding: 8px var(--gutter) 12px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* The creator strip, above the cluster list.
+
+   Three facts on one row over a sentence. The sentence is a fixed height rather
+   than a min-height, for the reason `.section-viewport` gives a few rules up:
+   this pane is a stack of boxes whose positions do not depend on what is in
+   them, and a strip that grew when the trace found something would move the
+   list down at the moment an operator started reading it.
+
+   What that is and is not backed by, because the difference matters. Swapping
+   this `height` for `min-height` leaves the whole suite green — every sentence
+   `devClaim` can currently return fits the two lines, so the two properties are
+   behaviourally identical today and neither the pane's CLS assertion nor any
+   other check can tell them apart. Measured, not assumed: the mutation was run.
+   So this is a guard against the *next* sentence, not a fix for a shift anybody
+   has observed, and it should not be read as one.
+
+   The check that does discriminate is in `cluster.mjs`, and it is the one that
+   matters here: every sentence the strip can print is rendered and measured
+   against this box, and a reserve a line short of any of them goes red. When a
+   longer sentence does arrive it is clipped rather than allowed to push the
+   list, that assertion catches it, and the full wording is on the title in the
+   meantime — which is where this pane already puts detail that does not fit. */
+.dev-facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px;
+  gap: 10px;
+  margin: 0;
+  padding: 8px var(--gutter) 0;
+}
+
+.dev-fact {
+  min-width: 0;
+}
+
+.dev-fact dd {
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Reserved at the width a shortened key actually takes, for the reason the two
+   radar cells are reserved: an em dash becoming `oper…1111` is a cell that
+   changes width the first time it fills, and that is a cold-start shift this
+   pane's own CLS assertion cannot see on a warm reload. Nine characters is
+   `shortKey`'s output — four, an ellipsis, four. */
+.dev-fact .mono {
+  min-width: 9ch;
+}
+
+.dev-claim {
+  height: 37px;
+  margin: 0;
+  padding: 5px var(--gutter) 6px;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.cluster-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px 66px 44px;
+  gap: 10px;
+  align-items: center;
+  padding: 0 var(--gutter);
+}
+
+/* The event trail. Time and source are fixed width so the message column starts
+   at the same place on every row — a trail is read by scanning down the
+   messages, and a ragged left edge is what stops that working. */
+.trail-grid {
+  display: grid;
+  grid-template-columns: 58px 62px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 0 var(--gutter);
+}
+
+/* One line, clipped. A wrapped message would change the row height and put the
+   timestamps out of step with the rows they belong to; the full payload is on
+   the row's tooltip, which is where the detail belongs. */
+.trail-msg {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --------------------------------------------------------------------------
+   execution deck and risk governor
+   -------------------------------------------------------------------------- */
+
+.governor {
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.gov-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: var(--row);
+  padding: 0 var(--gutter);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* The value keeps its own box whatever is in it.
+   
+   Every row here opens as an em dash and fills in when the first
+   `get_bundle_telemetry` lands — `bundle-states` goes from seven pixels to a
+   hundred and four in one frame, and three more beside it do the same. Right
+   aligned, so they grow leftwards, and the growth is the shift.
+   
+   Reserved rather than measured per row: these are six rows that all say the
+   same kind of thing and a per-row width would be six numbers to keep true.
+   The floor is the widest any of them gets — `bundle-states` at
+   `62 open · 47 landed` — and anything shorter sits right-aligned inside it,
+   which is where it was going to sit anyway. */
+.gov-row > .num,
+.gov-row > .mono {
+  min-width: 116px;
+  text-align: right;
+}
+
+.gov-row:last-child {
+  border-bottom: 0;
+}
+
+/* Drawdown against its limit, drawn as a bar because the ratio is the point
+   and the ratio is what a number makes you work out. */
+.meter {
+  flex: 1 1 auto;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  min-width: 40px;
+}
+
+.meter span {
+  display: block;
+  height: 100%;
+  width: var(--pct, 0%);
+  background: var(--accent);
+}
+
+.meter.is-warn span {
+  background: var(--warn);
+}
+
+.meter.is-halt span {
+  background: var(--halt);
+}
+
+/* The unwind banner. This is the one place in the shell allowed to shout:
+   a row here means something is on chain that the engine is no longer managing
+   and a person has to close by hand. */
+.unwind {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 7px var(--gutter);
+  border-bottom: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.10);
+  color: var(--halt);
+  font-size: 11px;
+}
+
+.unwind[data-open="true"] {
+  display: flex;
+}
+
+/* The button on the banner. Pushed to the far end so the sentence keeps the
+   left edge it shares with every other row in the pane. */
+.unwind-action {
+  margin-left: auto;
+}
+
+/* --------------------------------------------------------------------------
+   the unwind confirmation
+   -------------------------------------------------------------------------- */
+
+/* Flat, like everything else: no shadow to lift the panel off the page, no
+   radius, one hairline border. A modal that is obviously in front does not need
+   to be drawn as though it were floating — it is the only thing on screen that
+   is not dimmed, and that is the whole of the effect. */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  /* The ground colour at opacity rather than black. A pure-black wash over
+     #0a0a0a reads as a colder surface than the one underneath it. */
+  background: rgba(10, 10, 10, 0.82);
+}
+
+.modal[data-open="true"] {
+  display: flex;
+}
+
+.modal-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 96px);
+  background: var(--ground);
+  /* The one border in the window allowed to carry a colour. This panel is
+     asking about something that is on chain right now, and halt is what that
+     means everywhere else here. Still one pixel. */
+  border: 1px solid rgba(248, 113, 113, 0.55);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 var(--gutter);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--panel);
+  flex: 0 0 auto;
+}
+
+.modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 4px;
+}
+
+.modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+/* What is about to happen, in a sentence, at reading size. Every other string
+   in this window is a label or a number; this one is the exception, because it
+   is the only place the window asks rather than reports. */
+.modal-summary {
+  padding: 10px var(--gutter);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.modal-note {
+  padding: 6px var(--gutter) 10px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.modal-error {
+  margin: 8px var(--gutter);
+  padding: 7px 9px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.10);
+  color: var(--halt);
+  font-size: 11px;
+}
+
+/* Same construction as the other grids: one definition, columns that cannot
+   drift from the heading above them. */
+.oblig-grid {
+  display: grid;
+  /* The last column is wide enough for its own heading. `.col-head > *` clips
+     with an ellipsis rather than wrapping, so a column narrower than the word
+     above it silently renders as "ABORTED FR…" and reads like a bug. */
+  grid-template-columns: minmax(0, 1fr) 44px 72px 96px;
+  gap: 10px;
+  align-items: center;
+  padding: 0 var(--gutter);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px var(--gutter);
+  border-top: 1px solid var(--border-soft);
+  flex: 0 0 auto;
+}
+
+/* The same button the kill switch is, without assuming the kill switch's
+   colour. `.btn` is the neutral one; `.btn.is-halt` is the one that does
+   something that cannot be taken back. */
+.btn {
+  height: 22px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.btn:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--text);
+}
+
+.btn.is-halt {
+  border-color: rgba(248, 113, 113, 0.55);
+  color: var(--halt);
+}
+
+.btn.is-halt:hover {
+  background: var(--halt);
+  color: #0a0a0a;
+}
+
+.btn.is-halt:active {
+  background: #fca5a5;
+}
+
+.btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn.is-halt:focus-visible {
+  outline-color: var(--halt);
+}
+
+/* Disabled is drawn as unavailable, not as a colour that has been dimmed a
+   little. If flattening is not possible the button must not look like it is one
+   press away. */
+.btn:disabled {
+  border-color: var(--border-soft);
+  color: var(--text-ghost);
+}
+
+.btn:disabled:hover {
+  background: none;
+  color: var(--text-ghost);
+}
+
+.exec-grid {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 68px 54px;
+  gap: 10px;
+  align-items: center;
+  padding: 0 var(--gutter);
+}
+
+/* Execution state, as a word rather than a colour alone. Colour carries the
+   urgency; the word carries the meaning, and one of the two has to survive
+   being looked at by someone who cannot tell them apart. */
+.state {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0;
+  text-align: right;
+  color: var(--text-faint);
+}
+
+.state[data-state="sent"],
+.state[data-state="confirmed"] {
+  color: var(--warn);
+}
+
+.state[data-state="completed"] {
+  color: var(--live);
+}
+
+.state[data-state="aborted"] {
+  color: var(--halt);
+}
+
+.side[data-side="buy"] {
+  color: var(--live);
+}
+
+.side[data-side="sell"] {
+  color: var(--halt);
+}
+
+/* --------------------------------------------------------------------------
+   trade journal & alert feed
+   -------------------------------------------------------------------------- */
+
+/* A viewport of its own, and a fixed one, for the reason the tick stream has
+   one: both feeds are prepended to while the pane is being read, and the event
+   trail sits underneath them. Six rows under the heading — enough to see a run
+   of trades in, small enough that the trail is still on screen. */
+.feed-viewport {
+  position: relative;
+  height: 178px;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.feed-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+
+.feed-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.feed-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* Same rule as the other two viewports: whichever of the list and the four
+   empty states is showing, the box is the same height. */
+.feed-viewport .empty {
+  min-height: 0;
+  padding: 18px var(--gutter);
+}
+
+/* The column heads stay put while the rows under them scroll. Two feeds share
+   this box and only one is ever shown, so a head that scrolled away would take
+   the only thing naming the columns with it. */
+.feed .col-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ground);
+}
+
+.journal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px 62px 66px 52px 50px;
+  gap: 9px;
+  align-items: center;
+  padding: 0 var(--gutter);
+}
+
+.alert-grid {
+  display: grid;
+  grid-template-columns: 56px 104px minmax(0, 1fr) 62px 62px;
+  gap: 9px;
+  align-items: center;
+  padding: 0 var(--gutter);
+}
+
+/* Severity is a colour on the kind and nothing else. The row keeps the ground
+   it had: a feed of coloured bands is a feed where the one critical line does
+   not stand out from the twenty warnings above it. */
+.alert-kind {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+}
+
+.alert-grid.row[data-severity="warn"] .alert-kind {
+  color: var(--warn);
+}
+
+.alert-grid.row[data-severity="critical"] .alert-kind {
+  color: var(--halt);
+}
+
+/* The realised number. Green and red here are "made money" and "lost money",
+   which is the one place in this window those two colours mean that — every
+   other use is live/stopped — so the words `pnl sol` are in the column head
+   above it rather than left to the colour. */
+.journal-pnl[data-sign="up"] {
+  color: var(--live);
+}
+
+.journal-pnl[data-sign="down"] {
+  color: var(--halt);
+}
+
+/* An open trade has no realised number at all. Not a zero: zero is a trade
+   that closed exactly flat, which happens and means something else. */
+.journal-pnl[data-sign="none"] {
+  color: var(--text-faint);
+}
+
+/* --------------------------------------------------------------------------
+   the 0x100 sub-slot telemetry view
+   -------------------------------------------------------------------------- */
+
+/* Wider than the other two dialogs, and exactly as wide as it has to be: the
+   grid inside is sixteen fixed cells and a gutter, and a panel narrower than
+   that would either wrap the rows or scroll them sideways, both of which
+   destroy the only thing the view is for. */
+.modal-panel.is-wide {
+  width: min(680px, calc(100vw - 48px));
+  /* The instrument is not asking about money on chain, so it does not borrow
+     the unwind dialog's halt border. */
+  border-color: var(--border);
+}
+
+.hexgrid {
+  display: grid;
+  /* The address gutter, then sixteen cells. `repeat(16, ...)` rather than
+     `auto-fit`, because the row length is the specification here: a grid that
+     reflowed to fifteen columns at some width would silently stop being a
+     0x10 by 0x10 view of 0x100 samples. */
+  grid-template-columns: 46px repeat(16, 1fr);
+  gap: 2px;
+  padding: 6px var(--gutter) 10px;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.hexgrid .addr {
+  color: var(--text-ghost);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+/* One sample. Fixed box, so a band change repaints a colour and never a
+   layout — the whole grid is redrawn on every sample and a cell that could
+   change size would make the view shimmer. */
+.hexgrid .cell {
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  color: var(--text-ghost);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Five bands. Steady is deliberately the quietest thing on screen: a feed
+   behaving itself should not draw the eye, and the whole value of this view is
+   that a run of anything else is visible at a glance. */
+.hexgrid .cell[data-band="empty"] {
+  background: transparent;
+  color: var(--text-ghost);
+}
+
+.hexgrid .cell[data-band="steady"] {
+  color: var(--text-faint);
+}
+
+.hexgrid .cell[data-band="loose"] {
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.hexgrid .cell[data-band="wide"] {
+  color: var(--warn);
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.hexgrid .cell[data-band="broken"] {
+  color: var(--halt);
+  background: rgba(248, 113, 113, 0.16);
+}
+
+/* The sample the newest arrival landed in. An inset marker rather than a
+   border, for the reason every other cursor in this window is inset: a border
+   would change the cell's box and step the fifteen cells beside it. */
+.hexgrid .cell[data-head="true"] {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.hexlegend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 var(--gutter) 10px;
+  font-size: 10px;
+  letter-spacing: 0;
+  color: var(--text-faint);
+  flex-wrap: wrap;
+}
+
+.hexlegend .swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.hexlegend .glyph {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+}
+
+/* The status-bar cell that opens the view. It is a button and has to look like
+   the cells beside it, so every button default is unwound rather than
+   overridden piecemeal. */
+.tick-action {
+  border: 0;
+  border-right: 1px solid var(--border-soft);
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tick-action:hover .tick-name {
+  color: var(--text);
+}
+
+
+.tick-action:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* --------------------------------------------------------------------------
+   empty states
+   -------------------------------------------------------------------------- */
+
+/* Every pane has one, and every one of them says which of two things is true:
+   nothing has happened yet, or nothing is being received. Those look identical
+   on a quiet screen and mean completely different things. */
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+  padding: 28px var(--gutter);
+  text-align: center;
+}
+
+/* Full width, centred text — not a centred box.
+
+   Two of these are rewritten in place: the cluster pane says something
+   different once a candidate is selected. A shrink-to-fit box that is centred
+   moves its own edges every time its wording changes, and moving is the one
+   thing this pane is not allowed to do. The glyphs re-centre; the box does
+   not move. */
+.empty > * {
+  width: 100%;
+  text-align: center;
+}
+
+.empty-title {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.empty-note {
+  font-size: 10.5px;
+  max-width: 30ch;
+  margin: 0 auto;
+  color: var(--text-ghost);
+  line-height: 1.5;
+}
+
+/* --------------------------------------------------------------------------
+   status bar
+   -------------------------------------------------------------------------- */
+
+/* One cell per endpoint, divided by the same hairline as everything else, plus
+   a fixed cell on the right for the local pipeline numbers. */
+.tick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 var(--gutter);
+  border-right: 1px solid var(--border-soft);
+  white-space: nowrap;
+}
+
+.tick:first-child {
+  padding-left: 0;
+}
+
+.tick-name {
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+/* Same reservation as the top bar. A latency going from 17ms to 107ms is one
+   character wider, and one character is enough to move every cell to its right
+   while somebody is reading one of them. */
+.statusbar .tick > .mono {
+  min-width: 7ch;
+  text-align: right;
+}
+
+.statusbar .spacer {
+  border-right: 1px solid var(--border-soft);
+}
+
+.statusbar .tick:last-child {
+  border-right: 0;
+  padding-right: 0;
+}
+
+/* No cell gives up width because another cell's number got wider.
+   
+   A flex item's default is `0 1 auto` — it shrinks when the row is over-full —
+   and this row is over-full at every width the window can be at. Under that
+   default, a latency going from four characters to five makes every cell in
+   the bar shrink a fraction to make room, which is thirteen cells moving
+   because one number changed. The layout-shift observer sees it, and so does
+   anybody reading a number off the row.
+   
+   Refusing to shrink turns that into the failure mode the bar already has and
+   already handles: the row is too long, and `overflow: hidden` above clips the
+   end of it. A cell that is off the edge is one fact not visible. A cell that
+   moves is every fact misread. */
+.statusbar .tick {
+  flex: 0 0 auto;
+  /* Thirteen cells rather than twelve, so they sit a little closer together.
+     Two pixels a side, which is what keeps the row inside the window at its
+     default 1440 width — and the row fitting is what leaves the spacer with
+     slack to absorb a value getting wider. Without that slack the spacer is
+     pinned at its minimum, and the first number to arrive after a reload
+     shifts every cell on the other side of it. */
+  padding: 0 10px;
+}
+
+/* The search takes the width of its own row, so the chips above it keep
+   theirs. `min-width: 0` because a flex item's default floor is its content
+   and a placeholder is content. */
+.radar-search-row {
+  display: flex;
+}
+
+.radar-search {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* --------------------------------------------------------------------------
+   radar stats
+   -------------------------------------------------------------------------- */
+
+.radar-stats {
+  gap: 12px;
+  padding: 2px var(--gutter);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--panel);
+}
+
+.radar-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.radar-stat .mono {
+  font-size: 10.5px;
+}
+
+/* --------------------------------------------------------------------------
+   radar search
+   -------------------------------------------------------------------------- */
+
+.radar-search {
+  width: 180px;
+  height: 18px;
+  padding: 0 6px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0;
+}
+
+.radar-search::placeholder {
+  color: var(--text-ghost);
+}
+
+.radar-search:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   token name in radar
+   -------------------------------------------------------------------------- */
+
+.token-name {
+  font-size: 10px;
+  color: var(--accent);
+  margin-left: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+
+.token-pfp {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  vertical-align: -2px;
+  margin-right: 3px;
+  background: var(--panel-strong);
+}
+
+/* --------------------------------------------------------------------------
+   toast notifications
+   -------------------------------------------------------------------------- */
+
+.toast-container {
+  position: fixed;
+  bottom: 44px;
+  right: var(--gutter);
+  z-index: 100;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  background: rgba(10, 10, 10, 0.95);
+  color: var(--text);
+  font-size: 11px;
+  pointer-events: auto;
+  animation: toast-in 0.15s ease-out;
+  max-width: 380px;
+}
+
+.toast.is-warn {
+  border-color: rgba(251, 191, 36, 0.45);
+  color: var(--warn);
+}
+
+.toast.is-halt {
+  border-color: rgba(248, 113, 113, 0.45);
+  color: var(--halt);
+}
+
+.toast.is-live {
+  border-color: rgba(74, 222, 128, 0.45);
+  color: var(--live);
+}
+
+.toast-message {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast-dismiss {
+  flex: 0 0 auto;
+  cursor: pointer;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.toast-dismiss:hover {
+  color: var(--text);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.toast.removing {
+  animation: toast-out 0.15s ease-in forwards;
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(8px); }
+}
+
+/* --------------------------------------------------------------------------
+   narrow window
+   -------------------------------------------------------------------------- */
+
+/* The window's configured minimum is 960×600. At that width three panes at
+   their preferred widths do not fit, so the side panes give up their slack
+   first and the type in the dense columns steps down one notch. The layout
+   stays three panes: collapsing to two would hide either the evidence or the
+   controls, and both need to be visible at the same time as the feed. */
+@media (max-width: 1180px) {
+  .panes {
+    grid-template-columns:
+      minmax(200px, 240px)
+      minmax(0, 1fr)
+      minmax(260px, 300px);
+  }
+
+  .radar-grid {
+    grid-template-columns: minmax(0, 1fr) 46px 54px 38px;
+    gap: 7px;
+  }
+
+  .exec-grid {
+    grid-template-columns: 40px minmax(0, 1fr) 60px 46px;
+    gap: 7px;
+  }
+
+  .oblig-grid {
+    grid-template-columns: minmax(0, 1fr) 38px 62px 88px;
+    gap: 7px;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* The status bar is twelve cells of padding as much as it is twelve cells of
+     numbers. Taking four pixels off each side of each one buys back about
+     ninety pixels of bar — more than the sub-slot cell costs — so the narrow
+     window shows more of the pipeline numbers than it did before that cell
+     existed, rather than less. */
+  .statusbar .tick {
+    padding: 0 8px;
+  }
+
+  /* And the sub-slot cell gives up its word, which is the one cell here that
+     can: the dot carries the band, the two numbers carry the reading, and the
+     screen-reader text beside them still says what they are. Between this and
+     the padding above, the bar at 1180px is within a few pixels of the width it
+     was before this cell was added to it. */
+  .tick-action .tick-name {
+    display: none;
+  }
+
+  /* And the two feeds step down the same notch every other grid here does. */
+  /* `slip bps` is the widest heading in this grid and 46px clipped it. The
+     flexible mint column gives up the width instead, for the reason the tick
+     stream's does: a truncated base58 key is still recognisable by its last
+     four characters, and a truncated heading is a column with no units. */
+  .journal-grid {
+    grid-template-columns: minmax(0, 1fr) 30px 54px 58px 52px 46px;
+    gap: 7px;
+  }
+
+  .alert-grid {
+    grid-template-columns: 50px 92px minmax(0, 1fr) 56px 56px;
+    gap: 7px;
+  }
+
+  .metric:nth-child(2) {
+    border-right: 0;
+  }
+
+  .metric:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  /* The tick columns step down the same notch the other grids do. The two
+     narrow numeric columns keep their width — a delta in basis points is four
+     digits and a sign at its widest, and clipping the sign off a delta inverts
+     the number rather than shortening it. */
+  .stream-grid {
+    /* `mcap sol` is the widest heading in this grid and 50px clipped it. The
+       flexible curve column gives up the width instead: a truncated base58 key
+       is still recognisable by its last four characters, and a truncated
+       heading is a column with no units. */
+    grid-template-columns: 62px minmax(0, 1fr) 58px 44px 52px 42px 34px;
+    gap: 6px;
+  }
+
+  .curve-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 8px;
+  }
+
+  /* The bar already wraps at every width. Below this one the facts wrap
+     inside it as well, with the gaps the rest of the dense columns step down
+     to — the alternative is one fact per line, and a bar four lines tall is
+     four lines the panes do not have. */
+  .replay-facts {
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    overflow: visible;
+  }
+
+  /* The strip already wraps at every width; below this one it does it with the
+     gaps the rest of the dense columns step down to. */
+  .stream-tools {
+    gap: 4px 8px;
+  }
+
+  .filter-input {
+    width: 52px;
+  }
+
+  .filter-input.narrow {
+    width: 40px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   accessibility
+   -------------------------------------------------------------------------- */
+
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

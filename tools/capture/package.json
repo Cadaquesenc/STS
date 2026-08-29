@@ -1,0 +1,17 @@
+{
+  "name": "sts-capture",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The recorder that produced coins-*.jsonl, tracks-*.jsonl and tweets-*.jsonl. No dependencies; node:sqlite and node:websocket are built in.",
+  "bin": {
+    "capture": "./bin/capture.js"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "check": "node bin/capture.js check"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
