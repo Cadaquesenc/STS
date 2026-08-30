@@ -1,36 +1,36 @@
 # STS
 
 > i built a solana trading system for seventeen days.
-> on day seventeen i measured whether the trade made money.
-> it does not, and it turns out it never did.
+> and oh my days only on day seventeen i measured whether the trade made money.
+> it does not, and it turns out it never did. :(
 
 ## what i wanted it to be
 
-something that reads a launch better than the people buying it. wallet clustering to see who is really behind a coin, funding traced back through the graph, an ev engine that only takes trades it can explain. all local on my own machine, off a €200 stake, in the middle of the market where i thought nobody was looking.
+something that reads a launch better than the people buying it. wallet clustering to see who is really behind a coin, funding traced back through the graph, an ev engine that only takes trades it can explain. Combined with Scanning every major social media for any talk or noise about the ticker or the CA all local on my own machine, in the middle of the market where i thought nobody was looking at all those things together.
 
 ## what i made
 
-106k lines of rust behind a tauri window. a recorder that caught 12,089 real launches. exact pump.fun curve arithmetic checked trade by trade against the chain. wallet clustering. a hash-chained audit log. 1,654 passing tests.
+106k lines of rust!!!!!!! behind a tauri window. a recorder that caught 12,089 real launches. exact pump.fun curve arithmetic checked trade by trade against the chain. wallet clustering. a hash-chained audit log. 1,654 passing tests.
 
 all of it works. none of it ever asked whether the trade made money.
 
 ## what happened
 
-27 august 2026.
+27 august 2026. 
 
-buying launches and selling inside the minute loses **7.76% a trade**. at literally zero fees it still loses **0.86%**.
+buying launches and selling inside the minute loses **7.76% a tradeeeeee!!!!**. at literally zero fees it still loses (bro) **0.86%!**.
 
-so it is not the fees, it is not the machine and it is not the size of the stake. the loss is already there before anything gets charged.
+so it is not the fees, it is not the machine and it is not the size of the stake. the loss is already there before anything gets charged. and my dumbass didn't even check before bye bye claude tokens and Ethans brainpower
 
 then i swept it back to october 2024 and it was never positive in a single window. the edge was not competed away. there was never an edge.
 
 every signal i had is real, and none of them is worth anything. they tell you which coins are going to move and never which way.
 
-the money in this market is real. it just goes to whoever launched the coin.
+the money in this market is real. it just goes to whoever launched the coin. eg rug pullers maybe a rug software should be my next project :0 (wink wink)
 
-## why it took me seventeen days to notice
+## why it took me seventeen days to notice like a dumbass
 
-this is the part i actually put the repo up for.
+this is the part i actually put the repo up for. yes get to the point Ethan!
 
 my roadmap had 40 gates. of those 40, exactly **two** required me to be right about the market, and the first of those two is number 23.
 
@@ -40,11 +40,11 @@ that is not a discipline failure. i was extremely disciplined. i was disciplined
 
 ## what i learned
 
-- order your milestones by what can kill the project, not by what can be built next. the cheapest test of the core assumption goes first, always
+- order your milestones by what can kill the project, not by what can be built next. yes dumbass basic knowledge the cheapest test of the core assumption goes first, always
 - "works" and "makes money" are unrelated properties and it is very easy to spend seventeen days getting good at the first one
 - zero fees is the cleanest test there is. if it loses at zero fees, stop optimising execution
 - a signal that predicts magnitude and not direction feels like a signal, backtests like a signal, and pays nothing. check the sign separately
-- if the trade is negative in every window across two years, you were not late. there was nothing there
+- if the trade is negative in every window across two years, you were not late. there was nothing there same like Ethans love life (wink wink)
 
 ## run it
 
@@ -67,9 +67,6 @@ the trading answer is only about pump.fun. the other one is not, and that is the
 
 - ✅ 1,654 tests passing
 - ✅ 12,089 launches recorded
-- ❌ -7.76% a trade
+- ❌ -7.76% a trade :(
 - ❌ -0.86% at zero fees, so it was never the fees
-- 🪦 seventeen days
-- 📄 the postmortem is the useful part
-
-nothing here is advice. the measured result is a loss.
+- 🪦 seventeen days yes dumbass yes say it again
